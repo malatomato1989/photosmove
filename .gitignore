@@ -1,0 +1,67 @@
+.omc/
+.claude/
+*.exe
+*.android
+testdata/
+
+# Build artifacts
+android/build/
+android/assets/*.arm64
+android/assets/web/
+android/*.apk
+android/*.apk.idsig
+android/app-debug.apk
+android/release/
+
+# Gradle
+android/.gradle/
+android/local.properties
+android/app/build/
+android/app/src/main/jniLibs/
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# Secrets / signing keys / local config
+*.keystore
+android/keystore.properties
+*.jks
+*.pem
+*.p12
+*.pfx
+.env
+.env.local
+*.local
+
+# Logs
+*.log
+
+# Go
+server/coverage.out
+server/coverage.html
+
+# Temp/test files
+Plan.md
+*.png
+demo.png
+e.png
+thumb_test.jpg
+videothumb_test.jpg
+prototype_v2.html
+snap2pc_dashboard_symmetrical.html
+snap2pc_dashboard_symmetrical_0523.html.bk
+snap2pc_dashboard_symmetrical_0524.html
+web_index.html
+download/
+functions.md
+mvp.txt
+qa_test.js
+zapix_master_plan.md
+
+# macOS
+.DS_Store

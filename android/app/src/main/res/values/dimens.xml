@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Spacing -->
+    <dimen name="spacing_xs">4dp</dimen>
+    <dimen name="spacing_sm">8dp</dimen>
+    <dimen name="spacing_md">12dp</dimen>
+    <dimen name="spacing_lg">16dp</dimen>
+    <dimen name="spacing_xl">24dp</dimen>
+    <dimen name="spacing_xxl">32dp</dimen>
+
+    <!-- Card -->
+    <dimen name="card_radius">12dp</dimen>
+    <dimen name="card_padding">@dimen/spacing_lg</dimen>
+    <dimen name="card_margin">@dimen/spacing_lg</dimen>
+
+    <!-- Typography -->
+    <dimen name="text_title">24sp</dimen>
+    <dimen name="text_subtitle">14sp</dimen>
+    <dimen name="text_body">16sp</dimen>
+    <dimen name="text_pin">40sp</dimen>
+    <dimen name="text_url">16sp</dimen>
+    <dimen name="text_log">11sp</dimen>
+    <dimen name="text_btn">14sp</dimen>
+    <dimen name="text_step">14sp</dimen>
+
+    <!-- Button -->
+    <dimen name="btn_height">40dp</dimen>
+    <dimen name="btn_corner">8dp</dimen>
+    <dimen name="btn_copy_corner">6dp</dimen>
+
+    <!-- Status dot -->
+    <dimen name="status_dot_size">10dp</dimen>
+</resources>

@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="@color/bg_page"
+    android:fitsSystemWindows="true"
+    android:keepScreenOn="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/spacing_lg"
+        android:gravity="center_horizontal">
+
+        <!-- Header: app name + version + status -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="@dimen/spacing_md"
+            android:layout_marginBottom="@dimen/spacing_lg">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textSize="18sp"
+                android:textColor="@color/text_primary"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/version_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="12sp"
+                android:textColor="@color/text_hint"
+                android:layout_marginStart="@dimen/spacing_sm" />
+
+            <View
+                android:id="@+id/status_dot"
+                android:layout_width="@dimen/status_dot_size"
+                android:layout_height="@dimen/status_dot_size"
+                android:background="@drawable/status_dot"
+                android:layout_marginEnd="@dimen/spacing_sm" />
+
+            <TextView
+                android:id="@+id/status_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/status_starting"
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary" />
+
+            <TextView
+                android:id="@+id/duration_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+        <!-- WiFi Hint -->
+        <TextView
+            android:id="@+id/wifi_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/hint_wifi"
+            android:textSize="13sp"
+            android:textColor="@color/text_secondary"
+            android:gravity="center"
+            android:visibility="gone"
+            android:layout_marginBottom="@dimen/spacing_lg" />
+
+        <!-- WiFi Required Warning (shown when WiFi disconnected) -->
+        <TextView
+            android:id="@+id/wifi_required_warning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/wifi_required_warning"
+            android:textSize="15sp"
+            android:textColor="@color/status_error"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:background="@drawable/card_bg"
+            android:padding="@dimen/card_padding"
+            android:visibility="gone"
+            android:layout_marginBottom="@dimen/spacing_lg" />
+
+        <!-- ① URL Card -->
+        <LinearLayout
+            android:id="@+id/url_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            style="@style/Card"
+            android:visibility="gone"
+            android:layout_marginBottom="@dimen/spacing_lg">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_url"
+                style="@style/SectionLabel"
+                android:layout_marginBottom="@dimen/spacing_sm" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/url_text"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    style="@style/UrlText" />
+
+                <Button
+                    android:id="@+id/copy_url_btn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_copy"
+                    style="@style/CopyButton"
+                    android:layout_marginStart="@dimen/spacing_sm" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- ② PIN Card -->
+        <LinearLayout
+            android:id="@+id/pin_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            style="@style/Card"
+            android:visibility="gone"
+            android:layout_marginBottom="@dimen/spacing_lg">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_pin"
+                style="@style/SectionLabel"
+                android:layout_marginBottom="@dimen/spacing_sm" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/pin_text"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    style="@style/PinText" />
+
+                <Button
+                    android:id="@+id/copy_pin_btn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_copy"
+                    style="@style/CopyButton"
+                    android:layout_marginStart="@dimen/spacing_sm" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Transfer Progress Card -->
+        <LinearLayout
+            android:id="@+id/progress_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            style="@style/Card"
+            android:visibility="gone"
+            android:layout_marginBottom="@dimen/spacing_lg">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_transfer_progress"
+                style="@style/SectionLabel"
+                android:layout_marginBottom="@dimen/spacing_sm" />
+
+            <ProgressBar
+                android:id="@+id/progress_bar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="6dp"
+                android:max="100"
+                android:progress="0"
+                android:progressTint="@color/primary"
+                android:progressBackgroundTint="@color/card_border"
+                android:layout_marginBottom="@dimen/spacing_sm" />
+
+            <TextView
+                android:id="@+id/progress_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary" />
+
+        </LinearLayout>
+
+        <!-- Permission Button -->
+        <Button
+            android:id="@+id/permission_btn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_grant_permission"
+            style="@style/PrimaryButton"
+            android:visibility="gone"
+            android:layout_marginBottom="@dimen/spacing_lg" />
+
+    </LinearLayout>
+
+</ScrollView>

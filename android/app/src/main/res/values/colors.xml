@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary -->
+    <color name="primary">#1976D2</color>
+    <color name="primary_dark">#1565C0</color>
+    <color name="primary_light">#BBDEFB</color>
+
+    <!-- Background -->
+    <color name="bg_page">#FAFAFA</color>
+    <color name="bg_card">#FFFFFF</color>
+    <color name="bg_log">#F5F5F5</color>
+
+    <!-- Text -->
+    <color name="text_primary">#212121</color>
+    <color name="text_secondary">#757575</color>
+    <color name="text_hint">#BDBDBD</color>
+    <color name="text_url">#1976D2</color>
+    <color name="text_pin">#1565C0</color>
+
+    <!-- Status -->
+    <color name="status_running">#4CAF50</color>
+    <color name="status_error">#F44336</color>
+    <color name="status_idle">#9E9E9E</color>
+
+    <!-- Buttons -->
+    <color name="btn_primary">#1976D2</color>
+    <color name="btn_primary_text">#FFFFFF</color>
+    <color name="btn_copy_bg">#E3F2FD</color>
+    <color name="btn_copy_text">#1565C0</color>
+
+    <!-- Card shadow -->
+    <color name="card_shadow">#1A000000</color>
+    <color name="card_border">#E0E0E0</color>
+</resources>

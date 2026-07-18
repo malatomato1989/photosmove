@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>PhotosMove — 相册迁移</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjNjM2NmYxIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjNGY0NmU1Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNSIgZmlsbD0idXJsKCNnKSIvPjxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxLjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTIxIDE1djRhMiAyIDAgMDEtMiAySDVhMiAyIDAgMDEtMi0ydi00Ii8+PHBvbHlsaW5lIHBvaW50cz0iNyAxMCAxMiAxNSAxNyAxMCIvPjxsaW5lIHgxPSIxMiIgeTE9IjE1IiB4Mj0iMTIiIHkyPSIzIi8+PC9nPjwvc3ZnPg==">
+    <link rel="stylesheet" href="style.css?v=20260716m">
+</head>
+<body>
+    <div id="app">
+        <!-- ========== CONNECT VIEW ========== -->
+        <div id="connect-view" class="view">
+            <div class="connect-card">
+                <div class="brand-logo">
+                    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </div>
+                <h1>PhotosMove</h1>
+                <p class="subtitle">相册迁移 · 手机照片搬到电脑</p>
+                <form id="connect-form">
+                    <div class="pin-field">
+                        <label for="pin-input">手机端 APP 显示的验证码</label>
+                        <input type="text" id="pin-input" maxlength="4" placeholder="— — — —" autocomplete="off" inputmode="numeric" pattern="[0-9]*" autofocus>
+                    </div>
+                    <button type="submit" class="btn-primary connect-btn">连接手机</button>
+                </form>
+                <p id="connect-error" class="error"></p>
+                <div class="connect-tips">
+                    <div class="tip-row"><span class="tip-num">1</span> 手机和电脑连同一 WiFi</div>
+                    <div class="tip-row"><span class="tip-num">2</span> 打开 PhotosMove APP 获取验证码</div>
+                    <div class="tip-row"><span class="tip-num">3</span> 在此输入验证码连接</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== DASHBOARD VIEW ========== -->
+        <div id="dashboard-view" class="view hidden">
+            <!-- Top bar -->
+            <header class="topbar">
+                <div class="brand">
+                    <div class="brand-logo-sm">
+                        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </div>
+                    <div class="brand-text">
+                        <div class="brand-name">Photos<span>Move</span></div>
+                        <div class="brand-tagline">相册迁移 · 本地隐私 · 超级轻量 · 无损传输</div>
+                    </div>
+                </div>
+                <div class="topbar-right">
+                    <div class="status-pill" id="status-pill">
+                        <span class="status-dot"></span>
+                        <span id="status-text">已就绪</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard grid -->
+            <div class="dashboard-grid">
+                <!-- ========== LEFT: Main ========== -->
+                <main class="main-area">
+                    <!-- Album card -->
+                    <div class="main-card">
+                        <div class="thumb-row" id="thumb-row"></div>
+                        <div class="card-head">
+                            <h2 id="card-title" class="card-title">相机拍摄</h2>
+                            <p id="card-desc" class="card-desc">正在获取相册信息</p>
+                        </div>
+
+                        <div id="progress-section" class="progress-section hidden">
+                            <div class="progress-header">
+                                <div id="progress-album" class="progress-album"></div>
+                                <div class="progress-info">
+                                    <span id="progress-downloaded">已传 0 B / 0 B</span>
+                                    <span id="progress-speed">--</span>
+                                    <span id="progress-eta">--</span>
+                                </div>
+                                <div class="progress-pct-big" id="progress-pct">0%</div>
+                            </div>
+                            <div class="progress-bar-wrap">
+                                <div id="progress-bar" class="progress-fill"></div>
+                            </div>
+                        </div>
+
+                        <div id="done-badge" class="done-badge hidden">✓ 传输完成</div>
+                        <div id="cancel-badge" class="cancel-badge hidden">已取消</div>
+                    </div>
+
+                    <!-- Actions row: 下载 + 校验 一行 -->
+                    <div class="actions-row">
+                        <button id="btn-download" class="btn-primary btn-large" disabled>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            <span>加载中...</span>
+                        </button>
+                        <button id="btn-verify" class="tool-btn">
+                            <div class="tool-icon">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                            </div>
+                            <span class="tool-name">校验已下载zip文件</span>
+                        </button>
+                    </div>
+
+                    <!-- Verify panel (展开时显示) -->
+                    <div id="verify-panel" class="verify-panel hidden">
+                        <input id="verify-zip-input" type="file" accept=".zip,application/zip,application/x-zip-compressed" style="display:none" />
+                        <div id="verify-summary" class="verify-summary"></div>
+                        <div id="verify-progress" class="verify-progress hidden">
+                            <div class="verify-progress-bar"><div id="verify-progress-fill"></div></div>
+                            <span id="verify-progress-text"></span>
+                            <button id="verify-cancel" class="btn-cancel">取消</button>
+                        </div>
+                        <ul id="verify-results" class="verify-results"></ul>
+                    </div>
+
+                    <!-- Console -->
+                    <div class="console-section">
+                        <button class="console-toggle" id="console-toggle">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                            <span>传输日志</span>
+                        </button>
+                        <div class="console-box" id="console-box">
+                            <div id="live-logs" class="live-logs"></div>
+                        </div>
+                    </div>
+                </main>
+
+            </div>
+        </div>
+    </div>
+    <script src="app.js?v=20260716m"></script>
+    <script src="verify.js?v=20260716m"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+name: Go Tests (race)
+
+# Runs the full Go test suite with -race on Linux. Windows dev boxes lack
+# gcc so the race detector cannot run locally; this workflow is the safety
+# net for Pro v1's concurrency-heavy code paths (SQLite async consumer,
+# sync.Map staging, progressMap) before merging to master.
+#
+# P0 reference: Task #37 of pro-v1-three-hooks QA report.
+
+on:
+  push:
+    branches: [master, pro-v1-three-hooks]
+  pull_request:
+    branches: [master]
+
+jobs:
+  race-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: server/go.sum
+
+      - name: Build (race)
+        env:
+          CGO_ENABLED: 1
+        run: go build ./...
+
+      - name: Test with race detector
+        env:
+          CGO_ENABLED: 1
+        run: go test -race -count=1 -timeout 300s ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Coverage
+        env:
+          CGO_ENABLED: 1
+        run: |
+          go test -cover -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out | tail -25

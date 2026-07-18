@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PhotosMove</string>
+
+    <!-- Status -->
+    <string name="status_idle">等待授权</string>
+    <string name="status_starting">正在启动服务…</string>
+    <string name="status_running">服务运行中</string>
+    <string name="status_wifi_required">未连 WiFi</string>
+    <string name="status_stopped">服务已停止</string>
+    <string name="status_error">服务异常</string>
+    <string name="notif_service_running">照片传输服务运行中</string>
+    <string name="notif_channel_name">PhotosMove 服务</string>
+    <string name="notif_transferring">传输中 %1$d%% · %2$s/%3$s</string>
+    <string name="notif_done">传输完成 · %1$s</string>
+    <string name="notif_cancelled">传输已取消</string>
+    <string name="notif_paused">传输已暂停</string>
+    <string name="notif_warning_network">请保持网络通畅, 中断需重新下载整个 ZIP</string>
+    <string name="notif_big_file">⚠️ 大文件传输中, 请保持手机唤醒 + 网络通畅</string>
+    <string name="notif_wifi_required">请连接 WiFi 后使用</string>
+
+    <!-- Transfer states -->
+    <string name="transfer_done">✓ 传输完成</string>
+    <string name="transfer_cancelled">传输已取消</string>
+    <string name="transfer_paused">传输已暂停</string>
+
+    <!-- Labels -->
+    <string name="label_url">① 在电脑浏览器中打开下面的地址</string>
+    <string name="label_pin">② 在电脑浏览器中输入下面的PIN码</string>
+    <string name="label_transfer_progress">传输进度</string>
+    <string name="hint_wifi">确保手机和电脑连接同一个 WiFi</string>
+    <string name="wifi_required_warning">⚠️ 未连接 WiFi\n请连接到与电脑相同的局域网 WiFi\n连上后会自动显示地址</string>
+    <string name="duration_seconds">%1$d秒</string>
+
+    <!-- Buttons -->
+    <string name="btn_copy">复制</string>
+    <string name="btn_copy_done">已复制</string>
+    <string name="btn_grant_permission">授予存储权限</string>
+</resources>

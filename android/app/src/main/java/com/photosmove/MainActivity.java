@@ -2,6 +2,7 @@ package com.photosmove;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -9,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -18,8 +20,10 @@ import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public class MainActivity extends Activity {
 
@@ -155,6 +159,11 @@ public class MainActivity extends Activity {
     };
 
     @Override
+    protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase));
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
@@ -181,6 +190,11 @@ public class MainActivity extends Activity {
         TextView versionText = findViewById(R.id.version_text);
         versionText.setText("v" + ServerService.VERSION);
 
+        // Language switcher (组5.2): 显示当前语言, 点击弹列表选择
+        TextView langBtn = findViewById(R.id.lang_btn);
+        updateLangBtn(langBtn);
+        langBtn.setOnClickListener(v -> showLangPicker());
+
         copyUrlBtn.setOnClickListener(v -> {
             copyToClipboard("URL", currentUrl);
             showCopyDone(copyUrlBtn);
@@ -192,9 +206,19 @@ public class MainActivity extends Activity {
 
         permBtn.setOnClickListener(v -> requestStoragePermission());
 
+        // 隐私政策入口: 点击用系统浏览器打开 (Play 合规: 应用内可访问)
+        findViewById(R.id.privacy_link).setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW,
+                        Uri.parse(getString(R.string.privacy_policy_url))));
+            } catch (Exception e) {
+                Toast.makeText(this, R.string.no_browser, Toast.LENGTH_SHORT).show();
+            }
+        });
+
         IntentFilter filter = new IntentFilter(ServerService.ACTION_UPDATE);
         if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
         } else {
             registerReceiver(receiver, filter);
         }
@@ -282,6 +306,51 @@ public class MainActivity extends Activity {
         long hr = min / 60;
         min = min % 60;
         return String.format("%d:%02d:%02d", hr, min, sec);
+    }
+
+    private void updateLangBtn(TextView btn) {
+        String code = LocaleHelper.current(this);
+        btn.setText("zh".equals(code) ? getText(R.string.lang_zh) : getText(R.string.lang_en));
+    }
+
+    private void showLangPicker() {
+        boolean followingSystem = LocaleHelper.isFollowingSystem(this);
+        String current = LocaleHelper.current(this);
+
+        // 列表 = 支持语言 + 「跟随系统」(清 per-app, 跟随系统语言).
+        java.util.List<String> codes = new ArrayList<>(LocaleHelper.LANGUAGES.keySet());
+        java.util.List<String> labels = new ArrayList<>(LocaleHelper.LANGUAGES.values());
+        codes.add("system");
+        labels.add(getString(R.string.lang_system));
+
+        int checked = 0;
+        for (int i = 0; i < codes.size(); i++) {
+            String c = codes.get(i);
+            boolean sel = "system".equals(c) ? followingSystem : (!followingSystem && c.equals(current));
+            if (sel) { checked = i; break; }
+        }
+        String[] labelArr = labels.toArray(new String[0]);
+        String[] codeArr = codes.toArray(new String[0]);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.lang_selector_title)
+                .setSingleChoiceItems(labelArr, checked, (d, which) -> {
+                    String code = codeArr[which];
+                    if ("system".equals(code)) {
+                        if (!followingSystem) {
+                            LocaleHelper.clear(this);
+                            ServerService.refreshNotificationLocale(this);
+                            if (Build.VERSION.SDK_INT < 33) recreate();
+                        }
+                    } else {
+                        if (!code.equals(LocaleHelper.getManual(this))) {
+                            LocaleHelper.apply(this, code);
+                            ServerService.refreshNotificationLocale(this);
+                            if (Build.VERSION.SDK_INT < 33) recreate();
+                        }
+                    }
+                    d.dismiss();
+                })
+                .show();
     }
 
     private boolean hasStoragePermission() {

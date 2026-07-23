@@ -3,37 +3,47 @@
     <string name="app_name">PhotosMove</string>
 
     <!-- Status -->
-    <string name="status_idle">等待授权</string>
-    <string name="status_starting">正在启动服务…</string>
-    <string name="status_running">服务运行中</string>
-    <string name="status_wifi_required">未连 WiFi</string>
-    <string name="status_stopped">服务已停止</string>
-    <string name="status_error">服务异常</string>
-    <string name="notif_service_running">照片传输服务运行中</string>
-    <string name="notif_channel_name">PhotosMove 服务</string>
-    <string name="notif_transferring">传输中 %1$d%% · %2$s/%3$s</string>
-    <string name="notif_done">传输完成 · %1$s</string>
-    <string name="notif_cancelled">传输已取消</string>
-    <string name="notif_paused">传输已暂停</string>
-    <string name="notif_warning_network">请保持网络通畅, 中断需重新下载整个 ZIP</string>
-    <string name="notif_big_file">⚠️ 大文件传输中, 请保持手机唤醒 + 网络通畅</string>
-    <string name="notif_wifi_required">请连接 WiFi 后使用</string>
+    <string name="status_idle">Awaiting authorization</string>
+    <string name="status_starting">Starting service…</string>
+    <string name="status_running">Service running</string>
+    <string name="status_wifi_required">No WiFi</string>
+    <string name="status_stopped">Service stopped</string>
+    <string name="status_error">Service error</string>
+    <string name="notif_service_running">Photo transfer service running</string>
+    <!-- D7: channel name 语言无关品牌名(NotificationChannel 创建后 name 不随语言刷新) -->
+    <string name="notif_channel_name">PhotosMove</string>
+    <string name="notif_transferring">Transferring %1$d%% · %2$s/%3$s</string>
+    <string name="notif_done">Transfer complete · %1$s</string>
+    <string name="notif_cancelled">Transfer cancelled</string>
+    <string name="notif_paused">Transfer paused</string>
+    <string name="notif_wifi_required">Please connect to WiFi</string>
 
     <!-- Transfer states -->
-    <string name="transfer_done">✓ 传输完成</string>
-    <string name="transfer_cancelled">传输已取消</string>
-    <string name="transfer_paused">传输已暂停</string>
+    <string name="transfer_done">✓ Transfer complete</string>
+    <string name="transfer_cancelled">Transfer cancelled</string>
+    <string name="transfer_paused">Transfer paused</string>
 
     <!-- Labels -->
-    <string name="label_url">① 在电脑浏览器中打开下面的地址</string>
-    <string name="label_pin">② 在电脑浏览器中输入下面的PIN码</string>
-    <string name="label_transfer_progress">传输进度</string>
-    <string name="hint_wifi">确保手机和电脑连接同一个 WiFi</string>
-    <string name="wifi_required_warning">⚠️ 未连接 WiFi\n请连接到与电脑相同的局域网 WiFi\n连上后会自动显示地址</string>
-    <string name="duration_seconds">%1$d秒</string>
+    <string name="label_url">① Open the address below in a computer browser</string>
+    <string name="label_pin">② Enter the PIN below in the computer browser</string>
+    <string name="label_transfer_progress">Transfer progress</string>
+    <string name="hint_wifi">Make sure phone and computer are on the same WiFi</string>
+    <string name="wifi_required_warning">⚠️ Not connected to WiFi\nPlease connect to the same LAN WiFi as the computer\nAddress shows automatically once connected</string>
+    <string name="duration_seconds">%1$d s</string>
 
     <!-- Buttons -->
-    <string name="btn_copy">复制</string>
-    <string name="btn_copy_done">已复制</string>
-    <string name="btn_grant_permission">授予存储权限</string>
+    <string name="btn_copy">Copy</string>
+    <string name="btn_copy_done">Copied</string>
+    <string name="btn_grant_permission">Grant storage permission</string>
+
+    <!-- Privacy (Play compliance: in-app privacy policy entry, opens in system browser) -->
+    <string name="privacy_policy">Privacy Policy</string>
+    <string name="privacy_policy_url">https://github.com/malatomato1989/photosmove/blob/main/docs/privacy.md</string>
+    <string name="no_browser">No browser found to open the link</string>
+
+    <!-- Language switcher -->
+    <string name="lang_selector_title">Select language</string>
+    <string name="lang_zh">中文</string>
+    <string name="lang_en">English</string>
+    <string name="lang_system">System default</string>
 </resources>

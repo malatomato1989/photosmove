@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  zh-Hant (繁体 script) 兜底: 覆盖 zh-TW / zh-HK / zh-MO 等繁体 locale.
+  bare values-zh 被 Android 视为 zh-Hans, 不匹配 zh-Hant 系 (真机验证: per-app=zh-Hant-TW
+  界面仍英文); 需 BCP-47 script 限定的 values-b+zh+Hant 才能承接. 内容为简体中文 (LANGUAGES
+  把 zh 当一个桶, 简体是 app 唯一中文). 与 values-zh / values-zh-rCN 保持一致 (check-parity.js 校验).
+-->
+<resources>
+    <string name="app_name">PhotosMove</string>
+
+    <!-- Status -->
+    <string name="status_idle">等待授权</string>
+    <string name="status_starting">正在启动服务…</string>
+    <string name="status_running">服务运行中</string>
+    <string name="status_wifi_required">未连 WiFi</string>
+    <string name="status_stopped">服务已停止</string>
+    <string name="status_error">服务异常</string>
+    <string name="notif_service_running">照片传输服务运行中</string>
+    <!-- D7: channel name 语言无关品牌名(NotificationChannel 创建后 name 不随语言刷新) -->
+    <string name="notif_channel_name">PhotosMove</string>
+    <string name="notif_transferring">传输中 %1$d%% · %2$s/%3$s</string>
+    <string name="notif_done">传输完成 · %1$s</string>
+    <string name="notif_cancelled">传输已取消</string>
+    <string name="notif_paused">传输已暂停</string>
+    <string name="notif_wifi_required">请连接 WiFi 后使用</string>
+
+    <!-- Transfer states -->
+    <string name="transfer_done">✓ 传输完成</string>
+    <string name="transfer_cancelled">传输已取消</string>
+    <string name="transfer_paused">传输已暂停</string>
+
+    <!-- Labels -->
+    <string name="label_url">① 在电脑浏览器中打开下面的地址</string>
+    <string name="label_pin">② 在电脑浏览器中输入下面的PIN码</string>
+    <string name="label_transfer_progress">传输进度</string>
+    <string name="hint_wifi">确保手机和电脑连接同一个 WiFi</string>
+    <string name="wifi_required_warning">⚠️ 未连接 WiFi\n请连接到与电脑相同的局域网 WiFi\n连上后会自动显示地址</string>
+    <string name="duration_seconds">%1$d秒</string>
+
+    <!-- Buttons -->
+    <string name="btn_copy">复制</string>
+    <string name="btn_copy_done">已复制</string>
+    <string name="btn_grant_permission">授予存储权限</string>
+
+    <!-- Privacy (Play 合规: 应用内隐私政策入口, 点击用系统浏览器打开) -->
+    <string name="privacy_policy">隐私政策</string>
+    <string name="privacy_policy_url">https://github.com/malatomato1989/photosmove/blob/main/docs/privacy.md</string>
+    <string name="no_browser">未找到可打开链接的浏览器</string>
+
+    <!-- Language switcher -->
+    <string name="lang_selector_title">选择语言</string>
+    <string name="lang_zh">中文</string>
+    <string name="lang_en">English</string>
+    <string name="lang_system">跟随系统</string>
+</resources>

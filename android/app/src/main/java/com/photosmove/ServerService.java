@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.net.ConnectivityManager;
@@ -65,10 +66,26 @@ public class ServerService extends Service {
     private static volatile String lastStatus = "starting";
     private static volatile String lastPin = "";
     private static volatile String lastUrl = "";
+    // 运行中实例: MainActivity 切语言后调 refreshNotificationLocale 用 wrapped context
+    // 重建通知, 使 API 26-32 运行中切换语言时通知文案跟随 (D7), 无需重启 Service.
+    private static volatile ServerService instance = null;
+    // 当前生效 locale 的 context (切语言时由 refreshNotificationLocale 更新). 所有 notif
+    // getString 走此 context 而非冻结的 this, 使运行中切语言后 PROGRESS/DONE/... 文案
+    // 也跟随 (review 第三轮: 旧实现 refreshNotificationLocale 一次性重建被下一行 this.getString 覆盖).
+    private volatile Context localizedCtx = null;
 
     public static String getLastStatus() { return lastStatus; }
     public static String getLastPin() { return lastPin; }
     public static String getLastUrl() { return lastUrl; }
+
+    @Override
+    protected void attachBaseContext(Context base) {
+        // 与 App/MainActivity 一致: API 26-32 手动选语言时 wrap Service context,
+        // 使 getString(R.string.notif_*) 跟随 (API 33+ 由 LocaleManager app 级接管, wrap 为 no-op).
+        super.attachBaseContext(LocaleHelper.wrap(base));
+        // 初始化 localizedCtx = 当前生效 locale context; 运行中切语言时 refreshNotificationLocale 更新.
+        localizedCtx = LocaleHelper.resolveLocalizedContext(this);
+    }
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -77,13 +94,14 @@ public class ServerService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        instance = this;
         createNotificationChannel();
         Intent notifIntent = new Intent(this, MainActivity.class);
         PendingIntent pi = PendingIntent.getActivity(this, 0, notifIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle(getString(R.string.app_name))
-                .setContentText(getString(R.string.notif_service_running))
+                .setContentTitle(localizedCtx.getString(R.string.app_name))
+                .setContentText(localizedCtx.getString(R.string.notif_service_running))
                 .setSmallIcon(R.mipmap.ic_notification)
                 .setOngoing(true)
                 .setPriority(Notification.PRIORITY_MAX)
@@ -124,7 +142,7 @@ public class ServerService extends Service {
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID, getString(R.string.notif_channel_name), NotificationManager.IMPORTANCE_HIGH);
+                    CHANNEL_ID, localizedCtx.getString(R.string.notif_channel_name), NotificationManager.IMPORTANCE_HIGH);
             channel.setSound(null, null);
             channel.setShowBadge(true);
             getSystemService(NotificationManager.class).createNotificationChannel(channel);
@@ -232,7 +250,7 @@ public class ServerService extends Service {
                     wifiConnected = false;
                     Log.i(TAG, "WiFi network lost → wifi_required");
                     broadcast("wifi_required", null, null);
-                    updateNotification(getString(R.string.notif_wifi_required));
+                    updateNotification(localizedCtx.getString(R.string.notif_wifi_required));
                 }
             };
 
@@ -253,7 +271,7 @@ public class ServerService extends Service {
             if (!hasWifi) {
                 Log.i(TAG, "No active WiFi at startup → wifi_required");
                 broadcast("wifi_required", null, null);
-                updateNotification(getString(R.string.notif_wifi_required));
+                updateNotification(localizedCtx.getString(R.string.notif_wifi_required));
             } else {
                 wifiConnected = true;
             }
@@ -276,7 +294,44 @@ public class ServerService extends Service {
         PendingIntent pi = PendingIntent.getActivity(this, 0, notifIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle(getString(R.string.app_name))
+                .setContentTitle(localizedCtx.getString(R.string.app_name))
+                .setContentText(text)
+                .setSmallIcon(R.mipmap.ic_notification)
+                .setOngoing(true)
+                .setPriority(Notification.PRIORITY_MAX)
+                .setDefaults(0)
+                .setContentIntent(pi)
+                .build();
+        nm.notify(NOTIFICATION_ID, notification);
+    }
+
+    /**
+     * 运行中切语言后由 MainActivity 调用: 更新 localizedCtx 为新 locale context 并重建当前通知,
+     * 使后续 PROGRESS/DONE/... 的 updateNotification(localizedCtx.getString) 也跟随 (D7).
+     * API 33+ LocaleManager app 级覆盖, resolveLocalizedContext 返回 base, 但仍需重建已显示通知.
+     */
+    public static void refreshNotificationLocale(Context appCtx) {
+        ServerService svc = instance;
+        if (svc == null) return;
+        // 用 svc 而非 appCtx: 26-32 resolveLocalizedContext 会覆盖 locale (与 base 无关, 等价);
+        // 33+ 返回 base, svc (Service context) 无歧义跟随 LocaleManager, 而 appCtx (旧 Activity)
+        // 在 recreate 前 config 可能滞后于 setApplicationLocales.
+        svc.localizedCtx = LocaleHelper.resolveLocalizedContext(svc);
+        svc.doRefreshNotification(svc.localizedCtx);
+    }
+
+    private void doRefreshNotification(Context ctx) {
+        NotificationManager nm = (NotificationManager) ctx.getSystemService(NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        Intent notifIntent = new Intent(this, MainActivity.class);
+        PendingIntent pi = PendingIntent.getActivity(this, 0, notifIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        // 重建静态通知文案; 若传输进行中, 后续 PROGRESS 走 localizedCtx.getString 已跟随新语言.
+        String text = "wifi_required".equals(lastStatus)
+                ? ctx.getString(R.string.notif_wifi_required)
+                : ctx.getString(R.string.notif_service_running);
+        Notification notification = new Notification.Builder(ctx, CHANNEL_ID)
+                .setContentTitle(ctx.getString(R.string.app_name))
                 .setContentText(text)
                 .setSmallIcon(R.mipmap.ic_notification)
                 .setOngoing(true)
@@ -354,7 +409,7 @@ public class ServerService extends Service {
                             long pct = Long.parseLong(parts[3]);
                             String file = parts.length > 5 ? parts[5] : "";
                             String progressText = formatProgress(sent, total, pct, file);
-                            updateNotification(getString(R.string.notif_transferring, pct, formatSize(sent), formatSize(total)));
+                            updateNotification(localizedCtx.getString(R.string.notif_transferring, pct, formatSize(sent), formatSize(total)));
                             broadcast(null, null, null, progressText);
                         } catch (NumberFormatException ignored) {}
                     }
@@ -366,19 +421,19 @@ public class ServerService extends Service {
                     String payload = line.substring(idx + 5).trim();
                     String[] parts = payload.split(" ", 2);
                     String sizeStr = parts.length > 1 ? formatSize(Long.parseLong(parts[1])) : "";
-                    updateNotification(getString(R.string.notif_done, sizeStr), false);
+                    updateNotification(localizedCtx.getString(R.string.notif_done, sizeStr), false);
                     broadcast(null, null, null, null, STATE_DONE);
                     continue;
                 }
 
                 if (line.contains("CANCELLED:")) {
-                    updateNotification(getString(R.string.notif_cancelled), false);
+                    updateNotification(localizedCtx.getString(R.string.notif_cancelled), false);
                     broadcast(null, null, null, null, STATE_CANCELLED);
                     continue;
                 }
 
                 if (line.contains("PAUSED:")) {
-                    updateNotification(getString(R.string.notif_paused), false);
+                    updateNotification(localizedCtx.getString(R.string.notif_paused), false);
                     broadcast(null, null, null, null, STATE_PAUSED);
                     continue;
                 }
@@ -458,6 +513,7 @@ public class ServerService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        instance = null;
         shutdownRequested = true;
         if (networkCallback != null) {
             try {

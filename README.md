@@ -42,6 +42,19 @@ Phone runs an HTTP server (Go + Android foreground service) → PC browser conne
 - 4-digit PIN auth + Bearer token; IP lockout on repeated wrong PIN
 - Foreground service + wake lock so large transfers survive screen-off
 
+## Localization
+
+PhotosMove follows your system language (Chinese or English) out of the box, with a manual switcher if you want to override it.
+
+- **Android**: follows the system locale. Manually switchable from the top of the main screen. On Android 13+ you can also set it from system **Settings → App language**. On Android 8–12, switch only via the in-app picker (system per-app language isn't supported below Android 13).
+- **Web (PC browser)**: follows the browser's `navigator.language`. Manually switchable from the 🌐 globe icon at the top-right of the connect page and the dashboard.
+
+**Adding a language = one translation file, no code changes:**
+- Android: add `android/app/src/main/res/values-xx/strings.xml` and register the code in `LocaleHelper.LANGUAGES`.
+- Web: add `web/i18n/locales/xx.js` (mirroring `zh.js`/`en.js`) and add the code to `SUPPORTED` in `web/i18n/i18n.js`.
+
+Server error responses are language-neutral codes (`{"code":"E_XXX"}`); the front end translates them per the current UI language.
+
 ## Build
 
 Requirements: JDK 17, Android SDK (build-tools 35.0.0, platform android-35), Go 1.23+.

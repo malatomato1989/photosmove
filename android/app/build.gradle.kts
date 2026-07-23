@@ -9,13 +9,13 @@ plugins {
 
 android {
     namespace = "com.photosmove"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.photosmove"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1   // 手动递增，每次发版 +1
+        targetSdk = 36
+        versionCode = 2   // 手动递增，每次发版 +1
         versionName = appVersion
         ndk { abiFilters += "arm64-v8a" }
         buildConfigField("String", "VERSION", "\"$appVersion\"")
@@ -102,7 +102,16 @@ tasks.register<Copy>("copyWebAssets") {
     into(webDstDir)
 }
 
-// 构建前触发 Go 编译 + web 拷贝
+// i18n 翻译表一致性校验 (spec Req6 / tasks 6.1): zh.js/en.js 的 ui+errors key 集合 +
+// {param} 占位符必须一致, 防漏翻 key 导致中文系统回退显示英文. 失败则中断构建.
+tasks.register<Exec>("checkI18nParity") {
+    group = "verification"
+    description = "Verify zh.js/en.js translation key set + placeholder parity"
+    workingDir = rootProject.projectDir.parentFile   // repo root
+    commandLine("node", "web/i18n/check-parity.js")
+}
+
+// 构建前触发 Go 编译 + web 拷贝 + i18n 一致性校验
 tasks.named("preBuild") {
-    dependsOn("goBuild", "copyWebAssets")
+    dependsOn("goBuild", "copyWebAssets", "checkI18nParity")
 }

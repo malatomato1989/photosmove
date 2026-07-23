@@ -42,6 +42,19 @@ PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 10 �
 - 4 位 PIN 鉴权 + Bearer Token；PIN 错误多次封锁 IP
 - 前台服务 + 唤醒锁，大传输不被息屏打断
 
+## 多语言
+
+PhotosMove 开箱即用跟随系统语言（中文或英文），也可手动切换覆盖。
+
+- **Android**：跟随系统语言。可在主界面顶部手动切换。Android 13+ 也可在系统 **设置 → 应用语言** 中切换；Android 8–12 只能在应用内切换（13 以下系统不支持应用级语言）。
+- **Web（PC 浏览器）**：跟随浏览器 `navigator.language`。可在连接页和下载页右上角的 🌐 地球图标手动切换。
+
+**新增语言 = 一个翻译文件，零代码改动：**
+- Android：新增 `android/app/src/main/res/values-xx/strings.xml`，并在 `LocaleHelper.LANGUAGES` 登记语言代码。
+- Web：新增 `web/i18n/locales/xx.js`（对照 `zh.js`/`en.js`），并在 `web/i18n/i18n.js` 的 `SUPPORTED` 登记语言代码。
+
+服务端错误响应为语言无关的错误码（`{"code":"E_XXX"}`），前端按当前界面语言翻译。
+
 ## 构建
 
 依赖：JDK 17、Android SDK（build-tools 35.0.0、platform android-35）、Go 1.23+。

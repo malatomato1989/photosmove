@@ -819,8 +819,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .console-box p.log-error   { color: #f87171; }
 .console-box p.log-primary { color: var(--color-primary-soft); font-weight: 500; }
 
-/* 全局隐私 footer (main-area 底部) */
+/* 全局隐私 footer (main-area 底部, 链向公开隐私政策) */
 .privacy-footer {
+    display: block;
+    text-decoration: none;
     margin-top: 12px;
     padding: 14px 18px;
     background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
@@ -832,6 +834,26 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
     text-align: center;
     line-height: 1.5;
     box-shadow: 0 2px 8px rgba(16,185,129,0.15);
+}
+.privacy-footer:visited {
+    color: #065f46;
+}
+
+/* 连接页隐私入口 (轻量链接, Play 合规: 应用内可访问) */
+.privacy-link {
+    display: block;
+    margin-top: 18px;
+    text-align: center;
+    font-size: 0.85rem;
+    color: #9ca3af;
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+.privacy-link:hover {
+    color: #6366f1;
+}
+.privacy-link:visited {
+    color: #9ca3af;
 }
 
 /* ============================================================

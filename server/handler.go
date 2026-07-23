@@ -9,9 +9,9 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
-	_ "image/gif"
 	"io"
 	"log"
 	"net"
@@ -27,17 +27,17 @@ import (
 )
 
 type server struct {
-	pin       string
-	token     string
-	albums    []Album
-	batches   []Batch
-	mediaPort int
-	mu        sync.RWMutex
+	pin         string
+	token       string
+	albums      []Album
+	batches     []Batch
+	mediaPort   int
+	mu          sync.RWMutex
 	thumbs      map[int][]byte   // pre-generated composite thumbnails
 	videoThumbs map[int][]byte   // pre-generated video thumbnails
 	thumbTiles  map[int][][]byte // pre-generated single-image tiles per album (/api/thumb/{i}/{n})
 
-	authFails   int
+	authFails       int
 	authLockedUntil time.Time
 	activeDownloads int32 // atomic: number of running download goroutines
 }
@@ -45,9 +45,9 @@ type server struct {
 // batchProgress tracks ZIP generation progress for SSE notifications.
 type batchProgress struct {
 	mu          sync.Mutex
-	sent        int64  // bytes written so far
-	total       int64  // total bytes expected
-	files       int    // total file count
+	sent        int64 // bytes written so far
+	total       int64 // total bytes expected
+	files       int   // total file count
 	done        bool
 	cancelled   bool
 	currentFile string // file currently being written
@@ -93,10 +93,10 @@ func (p *batchProgress) snapshot() (sent, total int64, files int, done, cancelle
 }
 
 var (
-	progressMap   = make(map[string]*batchProgress)
-	progressMapMu sync.RWMutex
-	cancelMap   = make(map[string]context.CancelFunc)
-	cancelMapMu sync.Mutex
+	progressMap       = make(map[string]*batchProgress)
+	progressMapMu     sync.RWMutex
+	cancelMap         = make(map[string]context.CancelFunc)
+	cancelMapMu       sync.Mutex
 	canceledBatches   = make(map[string]time.Time)
 	canceledBatchesMu sync.RWMutex
 )
@@ -172,10 +172,10 @@ func clearCanceledBatches() {
 
 func registerHandlers(mux *http.ServeMux, pin, token string, albums []Album, webDir string, mediaPort int) http.Handler {
 	s := &server{
-		pin:       pin,
-		token:     token,
-		albums:    albums,
-		mediaPort: mediaPort,
+		pin:         pin,
+		token:       token,
+		albums:      albums,
+		mediaPort:   mediaPort,
 		thumbs:      make(map[int][]byte),
 		videoThumbs: make(map[int][]byte),
 		thumbTiles:  make(map[int][][]byte),
@@ -191,7 +191,6 @@ func registerHandlers(mux *http.ServeMux, pin, token string, albums []Album, web
 	mux.HandleFunc("/api/select", s.authRequired(s.handleSelect))
 	mux.HandleFunc("/api/batches", s.authRequired(s.handleBatches))
 	mux.HandleFunc("/api/batch/", s.handleBatch)
-	mux.HandleFunc("/api/progress", s.handleProgress)
 	mux.HandleFunc("/api/progress-poll", s.handleProgressPoll)
 	mux.HandleFunc("/api/cancel", s.authRequired(s.handleCancel))
 	mux.Handle("/", http.FileServer(http.Dir(webDir)))
@@ -236,6 +235,25 @@ func extractToken(r *http.Request) string {
 	return token
 }
 
+// writeErr 写语言无关的 error code 响应 (spec ui-localization Req5:
+// 服务端只回 code, 前端按当前 locale 翻译, 不含任何中英文 message 文案).
+func writeErr(w http.ResponseWriter, status int, code string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	fmt.Fprintf(w, `{"code":%q}`, code)
+}
+
+// writeErrDetail 同上, 附 detail 字段(底层技术信息, 原样保留不翻译, 如扫描失败的原始 error).
+func writeErrDetail(w http.ResponseWriter, status int, code, detail string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	b, _ := json.Marshal(struct {
+		Code   string `json:"code"`
+		Detail string `json:"detail,omitempty"`
+	}{code, detail})
+	w.Write(b)
+}
+
 func (s *server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := extractToken(r)
@@ -244,7 +262,7 @@ func (s *server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 		s.mu.RUnlock()
 
 		if !valid {
-			http.Error(w, `{"error":"未授权"}`, http.StatusUnauthorized)
+			writeErr(w, http.StatusUnauthorized, "E_UNAUTHORIZED")
 			return
 		}
 		next(w, r)
@@ -254,7 +272,7 @@ func (s *server) authRequired(next http.HandlerFunc) http.HandlerFunc {
 func (s *server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	log.Printf("POST /api/auth from %s UA=%q", r.RemoteAddr, r.UserAgent())
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeErr(w, http.StatusMethodNotAllowed, "E_METHOD_NOT_ALLOWED")
 		return
 	}
 
@@ -263,7 +281,7 @@ func (s *server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	if time.Now().Before(s.authLockedUntil) {
 		s.mu.Unlock()
 		log.Printf("POST /api/auth: rate-limited (locked)")
-		http.Error(w, `{"error":"尝试次数过多，请等待一分钟"}`, http.StatusTooManyRequests)
+		writeErr(w, http.StatusTooManyRequests, "E_RATE_LIMITED")
 		return
 	}
 	s.mu.Unlock()
@@ -273,7 +291,7 @@ func (s *server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("POST /api/auth: bad JSON: %v", err)
-		http.Error(w, `{"error":"请求格式错误"}`, http.StatusBadRequest)
+		writeErr(w, http.StatusBadRequest, "E_BAD_REQUEST")
 		return
 	}
 
@@ -286,7 +304,7 @@ func (s *server) handleAuth(w http.ResponseWriter, r *http.Request) {
 		}
 		s.mu.Unlock()
 		log.Printf("POST /api/auth: wrong PIN (fails=%d)", s.authFails)
-		http.Error(w, `{"error":"PIN 码错误"}`, http.StatusForbidden)
+		writeErr(w, http.StatusForbidden, "E_PIN_INVALID")
 		return
 	}
 
@@ -315,8 +333,8 @@ func (s *server) pregenerateThumbs() {
 	s.mu.RLock()
 	type thumbJob struct {
 		isVideo bool
-		index int
-		files []string
+		index   int
+		files   []string
 	}
 	var jobs []thumbJob
 	for i, a := range s.albums {
@@ -357,9 +375,10 @@ func (s *server) pregenerateThumbs() {
 }
 
 // handleThumb serves the pre-generated thumbnail image for an album.
-//   GET /api/thumb/{albumIndex}        → 2x2 composite (legacy, 整个相册一张)
-//   GET /api/thumb/{albumIndex}/{n}    → 第 n 张单图 tile (150×150), 让前端
-//                                        按容器宽度加载多张填满 thumb grid
+//
+//	GET /api/thumb/{albumIndex}        → 2x2 composite (legacy, 整个相册一张)
+//	GET /api/thumb/{albumIndex}/{n}    → 第 n 张单图 tile (150×150), 让前端
+//	                                     按容器宽度加载多张填满 thumb grid
 func (s *server) handleThumb(w http.ResponseWriter, r *http.Request) {
 	rest := r.URL.Path[len("/api/thumb/"):]
 	idStr := rest
@@ -368,21 +387,21 @@ func (s *server) handleThumb(w http.ResponseWriter, r *http.Request) {
 		idStr = rest[:idx]
 		n, err := strconv.Atoi(rest[idx+1:])
 		if err != nil || n < 0 {
-			http.Error(w, "invalid id", http.StatusBadRequest)
+			writeErr(w, http.StatusBadRequest, "E_INVALID_ID")
 			return
 		}
 		tileN = n
 	}
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeErr(w, http.StatusBadRequest, "E_INVALID_ID")
 		return
 	}
 
 	s.mu.RLock()
 	if id < 0 || id >= len(s.albums) {
 		s.mu.RUnlock()
-		http.Error(w, "not found", http.StatusNotFound)
+		writeErr(w, http.StatusNotFound, "E_NOT_FOUND")
 		return
 	}
 
@@ -391,7 +410,7 @@ func (s *server) handleThumb(w http.ResponseWriter, r *http.Request) {
 		tiles := s.thumbTiles[id]
 		if tileN >= len(tiles) {
 			s.mu.RUnlock()
-			http.Error(w, "no thumbnail", http.StatusNotFound)
+			writeErr(w, http.StatusNotFound, "E_NO_THUMBNAIL")
 			return
 		}
 		data := tiles[tileN]
@@ -407,7 +426,7 @@ func (s *server) handleThumb(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if !ok {
-		http.Error(w, "no thumbnail", http.StatusNotFound)
+		writeErr(w, http.StatusNotFound, "E_NO_THUMBNAIL")
 		return
 	}
 
@@ -422,14 +441,14 @@ func (s *server) handleVideoThumb(w http.ResponseWriter, r *http.Request) {
 	idStr := r.URL.Path[len("/api/videothumb/"):]
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
+		writeErr(w, http.StatusBadRequest, "E_INVALID_ID")
 		return
 	}
 
 	s.mu.RLock()
 	if id < 0 || id >= len(s.albums) {
 		s.mu.RUnlock()
-		http.Error(w, "not found", http.StatusNotFound)
+		writeErr(w, http.StatusNotFound, "E_NOT_FOUND")
 		return
 	}
 	s.mu.RUnlock()
@@ -439,7 +458,7 @@ func (s *server) handleVideoThumb(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if !ok {
-		http.Error(w, "no video thumbnail", http.StatusNotFound)
+		writeErr(w, http.StatusNotFound, "E_NO_VIDEO_THUMBNAIL")
 		return
 	}
 
@@ -450,7 +469,7 @@ func (s *server) handleVideoThumb(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleSelect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"方法不允许"}`, http.StatusMethodNotAllowed)
+		writeErr(w, http.StatusMethodNotAllowed, "E_METHOD_NOT_ALLOWED")
 		return
 	}
 
@@ -459,7 +478,7 @@ func (s *server) handleSelect(w http.ResponseWriter, r *http.Request) {
 		Since int64    `json:"since"` // unix timestamp, 0 = no filter
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"请求格式错误"}`, http.StatusBadRequest)
+		writeErr(w, http.StatusBadRequest, "E_BAD_REQUEST")
 		return
 	}
 
@@ -487,15 +506,14 @@ func (s *server) handleSelect(w http.ResponseWriter, r *http.Request) {
 
 	// Reject if a download goroutine is still running
 	if atomic.LoadInt32(&s.activeDownloads) > 0 {
-		http.Error(w, `{"error":"下载进行中，请等待完成或取消后再试"}`, http.StatusConflict)
+		writeErr(w, http.StatusConflict, "E_DOWNLOAD_IN_PROGRESS")
 		return
 	}
 
 	since := int64(0)
 	batches, err := scanDirectories(filtered, since)
 	if err != nil {
-		jsonErr, _ := json.Marshal(map[string]string{"error": fmt.Sprintf("扫描失败: %v", err)})
-		http.Error(w, string(jsonErr), http.StatusInternalServerError)
+		writeErrDetail(w, http.StatusInternalServerError, "E_SCAN_FAILED", err.Error())
 		return
 	}
 
@@ -602,10 +620,9 @@ func (s *server) handleBatches(w http.ResponseWriter, r *http.Request) {
 // drift, HEIC 3x estimation miss) MUST be back-filled — otherwise the
 // browser download progress freezes at 99% indefinitely because the body
 // is shorter than Content-Length. After padding, the progress entry is
-// removed so SSE handlers stop polling.
+// removed so the /api/progress-poll handler stops returning stale state.
 //
-// Used by all three ZIP-streaming endpoints (/api/batch, /api/sync-incremental,
-// /api/retry-failed) — previously only /api/batch had this safety net.
+// Used by the /api/batch ZIP-streaming endpoint.
 func padToZipSize(w io.Writer, written, zipSize int64, batchID string) {
 	if written > zipSize {
 		log.Printf("WARNING: batch %s actual ZIP %d > estimated %d", batchID, written, zipSize)
@@ -626,14 +643,14 @@ func padToZipSize(w io.Writer, written, zipSize int64, batchID string) {
 	scheduleProgressCleanup(batchID)
 }
 
-// scheduleProgressCleanup delays deletion of a progressMap entry so the SSE
-// handler (handleProgress, 100ms tick) has a window to push the terminal
-// done/cancelled event. Deleting immediately after writeBatchZip finishes
-// races the SSE loop: getBatchProgress returns nil → SSE pushes an empty
-// "waiting" event (sent=0, done=false) forever → the browser UI never sees
-// completion and stays stuck on "取消传输" + "已暂停" even though the ZIP is
-// fully delivered. 15s = ~150 SSE ticks, ample headroom; batchID is unique
-// per download so the delay never blocks the next one.
+// scheduleProgressCleanup delays deletion of a progressMap entry so the polling
+// client (handleProgressPoll, 1s interval) has a window to read the terminal
+// done/cancelled state. Deleting immediately after writeBatchZip finishes
+// races the polling loop: getBatchProgress returns nil → the poll response
+// reports sent=0, done=false forever → the browser UI never sees completion
+// and stays stuck on "取消传输" + "已暂停" even though the ZIP is fully
+// delivered. 15s = ~15 poll cycles, ample headroom; batchID is unique per
+// download so the delay never blocks the next one.
 func scheduleProgressCleanup(batchID string) {
 	go func() {
 		time.Sleep(15 * time.Second)
@@ -649,7 +666,7 @@ func (s *server) handleBatch(w http.ResponseWriter, r *http.Request) {
 	valid := subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) == 1
 	s.mu.RUnlock()
 	if !valid {
-		http.Error(w, `{"error":"未授权"}`, http.StatusUnauthorized)
+		writeErr(w, http.StatusUnauthorized, "E_UNAUTHORIZED")
 		return
 	}
 
@@ -671,13 +688,13 @@ func (s *server) handleBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.RUnlock()
 	if !found {
-		http.Error(w, `{"error":"批次不存在"}`, http.StatusNotFound)
+		writeErr(w, http.StatusNotFound, "E_BATCH_NOT_FOUND")
 		return
 	}
 
 	if isBatchCanceled(batch.ID) {
 		log.Printf("Rejected download for canceled batch %s", batch.ID)
-		http.Error(w, `{"error":"下载已取消"}`, http.StatusGone)
+		writeErr(w, http.StatusGone, "E_DOWNLOAD_CANCELLED")
 		return
 	}
 
@@ -764,12 +781,12 @@ func (s *server) handleProgressPoll(w http.ResponseWriter, r *http.Request) {
 	valid := subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) == 1
 	s.mu.RUnlock()
 	if !valid {
-		http.Error(w, `{"error":"未授权"}`, http.StatusUnauthorized)
+		writeErr(w, http.StatusUnauthorized, "E_UNAUTHORIZED")
 		return
 	}
 	batchID := r.URL.Query().Get("batch")
 	if batchID == "" {
-		http.Error(w, `{"error":"missing batch parameter"}`, http.StatusBadRequest)
+		writeErr(w, http.StatusBadRequest, "E_MISSING_BATCH_PARAM")
 		return
 	}
 	type snapshot struct {
@@ -794,170 +811,20 @@ func (s *server) handleProgressPoll(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleProgress is an SSE endpoint that streams ZIP generation progress.
-func (s *server) handleProgress(w http.ResponseWriter, r *http.Request) {
-	// Auth check
-	token := extractToken(r)
-	s.mu.RLock()
-	valid := subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) == 1
-	s.mu.RUnlock()
-	if !valid {
-		http.Error(w, `{"error":"未授权"}`, http.StatusUnauthorized)
-		return
-	}
-
-	batchID := r.URL.Query().Get("batch")
-	if batchID == "" {
-		http.Error(w, `{"error":"missing batch parameter"}`, http.StatusBadRequest)
-		return
-	}
-
-	// SSE headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	flusher, canFlush := w.(http.Flusher)
-
-	type progressEvent struct {
-		BatchID   string `json:"batch_id"`
-		Sent      int64  `json:"sent"`
-		Total     int64  `json:"total"`
-		File      string `json:"file,omitempty"`
-		Files     int    `json:"files"`
-		Done      bool   `json:"done"`
-		Cancelled bool   `json:"cancelled,omitempty"`
-	}
-
-	// 100ms tick: fine-grained enough that the 500ms dual-trigger boundary
-	// lands exactly on a tick (vs. the old 200ms tick which rounded to 400/600
-	// and starved the byte budget). Plan D (T-big-3 § 3.4).
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	// Plan D (T-big-3 § 3.4): push only when BOTH conditions hold — at least
-	// 500ms since the last push AND at least 10MB of new bytes since the last
-	// push. This caps a 30GB transfer to ~3000-6000 events instead of the
-	// naive 200ms-tick ceiling (~150000 events at full speed). The two-armed
-	// AND ensures the user still sees progress during slow stretches: if 10MB
-	// never accumulates (e.g. throttled), the 500ms arm fires alone would not
-	// — so we also force-push once a second even without 10MB progress, and
-	// we ALWAYS push terminal (done/cancelled) + waiting states.
-	var lastPushTime time.Time
-	var lastPushSent int64
-	var lastForcePush time.Time
-
-	push := func(evt progressEvent) {
-		data, _ := json.Marshal(evt)
-		_, err := fmt.Fprintf(w, "data: %s\n\n", data)
-		if err != nil {
-			log.Printf("SSE_DIAG: push FAILED batch=%s sent=%d err=%v (SSE连接已断)", evt.BatchID, evt.Sent, err)
-			return
-		}
-		log.Printf("SSE_DIAG: push OK batch=%s sent=%d", evt.BatchID, evt.Sent)
-		if canFlush {
-			flusher.Flush()
-		}
-		now := time.Now()
-		lastPushTime = now
-		lastForcePush = now
-	}
-
-	for {
-		select {
-		case <-r.Context().Done():
-			log.Printf("SSE_DIAG: SSE连接断开 batch=%s (r.Context.Done, 客户端断开或网络断)", batchID)
-			// Do NOT delete progressMap entry — the download owns it, not the SSE client
-			return
-		case <-ticker.C:
-			p := getBatchProgress(batchID)
-			if p == nil {
-				log.Printf("SSE_DIAG: getProgress=nil batch=%s (progress 丢失, 推 waiting)", batchID)
-				// Not started yet, send waiting event
-				push(progressEvent{BatchID: batchID})
-				continue
-			}
-
-			sent, total, files, done, cancelled, currentFile := p.snapshot()
-			evt := progressEvent{
-				BatchID: batchID,
-				Sent:    sent,
-				Total:   total,
-				File:    currentFile,
-				Files:   files,
-				Done:      done,
-				Cancelled: cancelled,
-			}
-
-			now := time.Now()
-			should, isTerminal := shouldPushSSE(now, lastPushTime, lastForcePush, lastPushSent, sent, done || cancelled)
-			if should {
-				push(evt)
-				lastPushSent = sent
-				if isTerminal {
-					progressMapMu.Lock()
-					delete(progressMap, batchID)
-					progressMapMu.Unlock()
-					return
-				}
-			}
-		}
-	}
-}
-
-// ssePushConfig holds the dual-trigger push policy from T-big-3 § 3.4.
-// Extracted as package-level constants so the unit test can reference them
-// and assert the 30GB → 3000-6000 event budget without copy-pasting.
-const (
-	ssePushInterval      = 500 * time.Millisecond
-	ssePushByteDelta     int64 = 10 * 1024 * 1024 // 10 MiB
-	sseForcePushInterval       = 1 * time.Second   // backstop for slow stretches
-)
-
-// shouldPushSSE decides whether the next SSE event should be emitted.
-// Returns (shouldPush, isTerminal). isTerminal is true when done/cancelled
-// is reached and the caller must clean up + return.
-//
-// The policy:
-//   - first push ever: always emit
-//   - terminal state (done/cancelled): always emit
-//   - >=500ms AND >=10MB since last push: emit (dual-trigger)
-//   - >=1s since last push even without 10MB: emit (slow-stretch backstop)
-//
-// Pure function — no I/O, no globals — so it's trivially unit-testable.
-func shouldPushSSE(now, lastPush, lastForcePush time.Time, lastSent, sent int64, terminal bool) (shouldPush bool, isTerminal bool) {
-	if terminal {
-		return true, true
-	}
-	if lastPush.IsZero() {
-		return true, false
-	}
-	timeMet := now.Sub(lastPush) >= ssePushInterval
-	bytesMet := sent-lastSent >= ssePushByteDelta
-	forceMet := now.Sub(lastForcePush) >= sseForcePushInterval
-	if timeMet && bytesMet {
-		return true, false
-	}
-	if forceMet && !bytesMet {
-		return true, false
-	}
-	return false, false
-}
-
 func (s *server) handleCancel(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		writeErr(w, http.StatusMethodNotAllowed, "E_METHOD_NOT_ALLOWED")
 		return
 	}
 	var req struct {
 		BatchID string `json:"batch_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		writeErr(w, http.StatusBadRequest, "E_BAD_REQUEST")
 		return
 	}
 	if req.BatchID == "" {
-		http.Error(w, `{"error":"missing batch_id"}`, http.StatusBadRequest)
+		writeErr(w, http.StatusBadRequest, "E_MISSING_BATCH_ID")
 		return
 	}
 	cancelled := cancelBatch(req.BatchID)
@@ -969,7 +836,6 @@ func (s *server) handleCancel(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"cancelled": cancelled})
 }
-
 
 const cellSize = 150
 

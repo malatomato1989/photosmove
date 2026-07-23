@@ -22,6 +22,9 @@
 //
 // 取消: 用户随时点 [取消] → terminate Worker (pending 全部 reject), 下次
 // 校验时 ensureWorker() 重建.
+//
+// i18n: 所有用户可见文案经 window.I18N.t (verify_* key, 详见 locales/zh|en.js).
+// I18N 由 i18n.js 在本文件之前加载, 全局可用.
 (function () {
     'use strict';
 
@@ -37,7 +40,16 @@
 
     if (!btnVerify) return;
 
+    // i18n 守卫: i18n.js 加载失败时 I18N 未定义, 这里 return 避免后续事件回调里
+    // 调 I18N.t 抛 ReferenceError. 静态 data-i18n 元素仍由 app.js 的兜底逻辑覆盖.
+    if (typeof I18N === 'undefined') return;
+
     let cancelled = false;
+    // 当前校验阶段快照 (切语言时 rerender 据此重设 verify-progress-text/verify-summary,
+    // 二者无 data-i18n, applyToDOM 跳过). summary = {key, params, strong} 描述当前 summary
+    // 元素文案 ('normal'→<strong>, 'gray'→<strong style=color:#6b7280>, null→纯文本),
+    // 切语言时据此重建, 避免 parsing/stage/cancelled 态残留旧语言.
+    let verifyState = { phase: 'idle', stage: null, summary: null };
 
     function show() { if (panel) panel.classList.remove('hidden'); }
     function hide() { if (panel) panel.classList.add('hidden'); }
@@ -48,10 +60,28 @@
         if (progressFill) progressFill.style.width = '0%';
         if (progressText) progressText.textContent = '';
         cancelled = false;
+        verifyState = { phase: 'idle', stage: null, summary: null };
     }
 
-    // Expose show/hide for app.js to call on mode change.
-    window.photosmoveVerify = { show, hide };
+    function renderSummary(s) {
+        if (!s || !summary) return;
+        const text = I18N.t(s.key, s.params || {});
+        if (s.strong === 'normal') summary.innerHTML = '<strong>' + text + '</strong>';
+        else if (s.strong === 'gray') summary.innerHTML = '<strong style="color:#6b7280">' + text + '</strong>';
+        else summary.textContent = text;
+    }
+
+    // Expose show/hide/rerender for app.js (切语言时 onLocaleChange 调 rerender 重渲动态文案).
+    function rerender() {
+        if (!verifyState) return;
+        renderSummary(verifyState.summary);
+        if (verifyState.stage && progressText) {
+            if (verifyState.phase === 'stage1') progressText.textContent = I18N.t('verify_stage1', verifyState.stage);
+            else if (verifyState.phase === 'stage2') progressText.textContent = I18N.t('verify_stage2', verifyState.stage);
+        }
+        // done 态走 modal (独立 DOM, 不在此重渲).
+    }
+    window.photosmoveVerify = { show, hide, rerender };
 
     // 点 [完整性校验] 直接打开 ZIP 选择器, panel 暂不展开 (避免空白白底).
     // panel 在 onZipPicked 内 (用户选完 ZIP 后) 才 remove('hidden').
@@ -63,12 +93,11 @@
     if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {
             cancelled = true;
+            verifyState = { phase: 'cancelled', stage: null, summary: { key: 'verify_cancelled', strong: 'gray' } };
             // terminate Worker 并 reject 所有 in-flight 哈希 (下次校验时重建)
             destroyHasher();
             if (progressBox) progressBox.classList.add('hidden');
-            if (summary) {
-                summary.innerHTML = '<strong style="color:#6b7280">已取消</strong>';
-            }
+            renderSummary(verifyState.summary);
         });
     }
 
@@ -115,14 +144,16 @@
             }
             if (i % 50 === 0 || i === entries.length - 1) {
                 if (progressFill) progressFill.style.width = '100%';
-                if (progressText) progressText.textContent = `阶段 1/2 大小预筛: ${i + 1} / ${entries.length}`;
+                verifyState = { phase: 'stage1', stage: { i: i + 1, n: entries.length }, summary: verifyState.summary };
+                if (progressText) progressText.textContent = I18N.t('verify_stage1', { i: i + 1, n: entries.length });
                 // Yield 让进度条重绘.
                 await new Promise(r => setTimeout(r, 0));
             }
         }
 
         if (cancelled) {
-            if (progressText) progressText.textContent = '已取消';
+            verifyState = { phase: 'cancelled', stage: null, summary: { key: 'verify_cancelled', strong: 'gray' } };
+            if (progressText) progressText.textContent = I18N.t('verify_cancelled');
             return;
         }
 
@@ -159,33 +190,35 @@
 
                 const pct = Math.round(((i + 1) / total) * 100);
                 if (progressFill) progressFill.style.width = pct + '%';
-                if (progressText) progressText.textContent = `阶段 2/2 字节级校验: ${i + 1} / ${total} 个文件`;
+                verifyState = { phase: 'stage2', stage: { i: i + 1, n: total }, summary: verifyState.summary };
+                if (progressText) progressText.textContent = I18N.t('verify_stage2', { i: i + 1, n: total });
                 await new Promise(r => setTimeout(r, 0));
             }
         }
 
         if (cancelled) {
-            if (progressText) progressText.textContent = '已取消';
+            verifyState = { phase: 'cancelled', stage: null, summary: { key: 'verify_cancelled', strong: 'gray' } };
+            if (progressText) progressText.textContent = I18N.t('verify_cancelled');
             return;
         }
 
         // ===== 结果弹窗 (四类) =====
         const totalSize = entries.reduce((s, e) => s + (e.size || 0), 0);
-        let html = `<div class="verify-modal-title">校验结果 (${escapeHtml(sourceLabel)})</div>`;
-        html += `<div class="verify-modal-stat ok">✔ 字节级完整: ${byteOk} 个文件</div>`;
+        let html = '<div class="verify-modal-title">' + I18N.t('verify_result_title', { source: escapeHtml(sourceLabel) }) + '</div>';
+        html += '<div class="verify-modal-stat ok">' + I18N.t('verify_ok', { count: byteOk }) + '</div>';
         if (corrupted > 0) {
-            html += `<div class="verify-modal-stat err">✗ 字节损坏: ${corrupted} 个文件 (大小一致但 SHA-256 不符)</div>`;
+            html += '<div class="verify-modal-stat err">' + I18N.t('verify_corrupted', { count: corrupted }) + '</div>';
         }
         if (mismatched > 0) {
-            html += `<div class="verify-modal-stat warn">⚠️ 大小不符: ${mismatched} 个文件</div>`;
+            html += '<div class="verify-modal-stat warn">' + I18N.t('verify_size_mismatch', { count: mismatched }) + '</div>';
         }
         if (missing > 0) {
-            html += `<div class="verify-modal-stat err">✗ 缺失: ${missing} 个文件</div>`;
+            html += '<div class="verify-modal-stat err">' + I18N.t('verify_missing', { count: missing }) + '</div>';
         }
         if (sizeOnly > 0) {
-            html += `<div class="verify-modal-stat meta">· 仅大小校验: ${sizeOnly} 个文件 (manifest 无 sha256)</div>`;
+            html += '<div class="verify-modal-stat meta">' + I18N.t('verify_size_only', { count: sizeOnly }) + '</div>';
         }
-        html += `<div class="verify-modal-meta">总大小: ${fmtSize(totalSize)} · 共 ${entries.length} 个文件</div>`;
+        html += '<div class="verify-modal-meta">' + I18N.t('verify_total', { size: fmtSize(totalSize), count: entries.length }) + '</div>';
 
         // 详情列表 (损坏 + 不符 + 缺失, 每类 cap 25).
         const DETAIL_CAP = 25;
@@ -196,22 +229,22 @@
         for (const c of cCap) {
             const exp = String(c.expected || '').slice(0, 12);
             const act = String(c.actual || '').slice(0, 12);
-            all.push(`<li class="verify-err">${escapeHtml(c.path)} — SHA-256 不符 (期望 ${exp}… / 实际 ${act}…)</li>`);
+            all.push('<li class="verify-err">' + escapeHtml(c.path) + ' — ' + I18N.t('verify_sha_mismatch_detail', { exp: exp, act: act }) + '</li>');
         }
         for (const m of mCap) {
-            all.push(`<li class="verify-warn">${escapeHtml(m.path)} — 期望 ${fmtSize(m.expected)} / 实际 ${fmtSize(m.actual)}</li>`);
+            all.push('<li class="verify-warn">' + escapeHtml(m.path) + ' — ' + I18N.t('verify_size_detail', { exp: fmtSize(m.expected), act: fmtSize(m.actual) }) + '</li>');
         }
         for (const m of missCap) {
-            all.push(`<li class="verify-err">${escapeHtml(m.path)} — 缺失</li>`);
+            all.push('<li class="verify-err">' + escapeHtml(m.path) + ' — ' + I18N.t('verify_missing_short') + '</li>');
         }
         const moreCount = Math.max(0, corruptedFiles.length - DETAIL_CAP)
             + Math.max(0, mismatchedFiles.length - DETAIL_CAP)
             + Math.max(0, missingFiles.length - DETAIL_CAP);
         if (moreCount > 0) {
-            all.push(`<li class="verify-more">... 还有 ${moreCount} 个未显示 (查看 manifest.json 完整清单)</li>`);
+            all.push('<li class="verify-more">' + I18N.t('verify_more', { count: moreCount }) + '</li>');
         }
         if (all.length > 0) {
-            html += `<ul class="verify-modal-list">${all.join('')}</ul>`;
+            html += '<ul class="verify-modal-list">' + all.join('') + '</ul>';
         }
 
         showResultModal(html);
@@ -279,7 +312,7 @@
         const lh = new Uint8Array(await file.slice(entry.offset, entry.offset + 30).arrayBuffer());
         const lhView = new DataView(lh.buffer);
         if (lhView.getUint32(0, true) !== 0x04034b50) {
-            throw new Error('Local header 签名不匹配: ' + entry.path);
+            throw new Error(I18N.t('verify_err_local_header', { path: entry.path }));
         }
         const fileNameLen = lhView.getUint16(26, true);
         const extraLen = lhView.getUint16(28, true);
@@ -328,8 +361,8 @@
 
     // 显示错误并隐藏进度条 (不再残留"取消"按钮 + 0% 进度条).
     function showError(title, detail) {
-        const html = `<div class="verify-modal-title err">${escapeHtml(title)}</div>` +
-            (detail ? `<div class="verify-modal-meta">${escapeHtml(detail)}</div>` : '');
+        const html = '<div class="verify-modal-title err">' + escapeHtml(title) + '</div>' +
+            (detail ? '<div class="verify-modal-meta">' + escapeHtml(detail) + '</div>' : '');
         showResultModal(html);
         if (panel) panel.classList.add('hidden');
         if (progressBox) progressBox.classList.add('hidden');
@@ -341,7 +374,7 @@
         hideResultModal();
         const mask = document.createElement('div');
         mask.className = 'verify-modal-mask';
-        mask.innerHTML = `<div class="verify-modal">${innerHTML}</div>`;
+        mask.innerHTML = '<div class="verify-modal">' + innerHTML + '</div>';
         // 点 mask (弹窗外) → 关闭; 点 modal 内容 → stopPropagation 不关闭.
         mask.addEventListener('click', hideResultModal);
         const modal = mask.querySelector('.verify-modal');
@@ -365,12 +398,13 @@
         reset();
         if (panel) panel.classList.remove('hidden');
         if (progressBox) progressBox.classList.remove('hidden');
-        if (summary) summary.innerHTML = `<strong>解析 ZIP 中央目录: ${escapeHtml(file.name)} (${fmtSize(file.size)})...</strong>`;
+        verifyState = { phase: 'parsing', stage: null, summary: { key: 'verify_parsing_cd', params: { name: escapeHtml(file.name), size: fmtSize(file.size) }, strong: 'normal' } };
+        renderSummary(verifyState.summary);
 
         try {
             const result = await parseZipCentralDirectory(file);
             if (!result.manifestEntry) {
-                showError('⚠️ ZIP 内未找到 manifest.json', '请确认是 PhotosMove 下载的 ZIP');
+                showError(I18N.t('verify_no_manifest'), I18N.t('verify_no_manifest_hint'));
                 return;
             }
 
@@ -380,17 +414,17 @@
             try {
                 manifest = JSON.parse(new TextDecoder().decode(manifestBytes));
             } catch (err) {
-                showError('⚠️ manifest.json 解析失败', err.message);
+                showError(I18N.t('verify_manifest_parse_failed'), err.message);
                 return;
             }
             if (!manifest.files || !Array.isArray(manifest.files)) {
-                showError('⚠️ manifest.json 格式无效');
+                showError(I18N.t('verify_manifest_invalid'));
                 return;
             }
 
-            await runVerify(result.fileMap, file, manifest, 'ZIP 文件');
+            await runVerify(result.fileMap, file, manifest, I18N.t('verify_source_zip'));
         } catch (err) {
-            showError('⚠️ ZIP 解析失败', err.message || String(err));
+            showError(I18N.t('verify_zip_parse_failed'), err.message || String(err));
         }
     }
 
@@ -430,7 +464,7 @@
     async function parseZipCentralDirectory(file) {
         // 1. 流式找 EOCD (End of Central Directory)
         const eocd = await findEocd(file);
-        if (!eocd) throw new Error('未找到 EOCD (非 ZIP 文件或 ZIP 损坏?)');
+        if (!eocd) throw new Error(I18N.t('verify_err_no_eocd'));
         const { start: eocdChunkStart, position: eocdOff, view: tailView } = eocd;
         // EOCD 在整个文件中的绝对 offset
         const eocdAbsOffset = eocdChunkStart + eocdOff;
@@ -454,12 +488,12 @@
                 // ZIP64 EOCD 56 字节起, 签名 0x06064b50
                 const z64 = new Uint8Array(await file.slice(z64EocdOffset, z64EocdOffset + 56).arrayBuffer());
                 const z64View = new DataView(z64.buffer);
-                if (z64View.getUint32(0, true) !== 0x06064b50) throw new Error('ZIP64 EOCD 签名不匹配');
+                if (z64View.getUint32(0, true) !== 0x06064b50) throw new Error(I18N.t('verify_err_zip64_eocd'));
                 totalEntries = readU64(z64View, 32, true);  // 实际 entries (CD 这一个 disk)
                 cdSize = readU64(z64View, 40, true);
                 cdOffset = readU64(z64View, 48, true);
             } else {
-                throw new Error('ZIP64 标记但找不到 locator');
+                throw new Error(I18N.t('verify_err_zip64_locator'));
             }
         }
 
@@ -471,8 +505,8 @@
         let manifestEntry = null;
         let off = 0;
         for (let i = 0; i < totalEntries; i++) {
-            if (off + 46 > cd.length) throw new Error('CD entry 越界 (entry ' + i + ')');
-            if (cdView.getUint32(off, true) !== 0x02014b50) throw new Error('CD 签名不匹配 (entry ' + i + ')');
+            if (off + 46 > cd.length) throw new Error(I18N.t('verify_err_cd_oob', { i: i }));
+            if (cdView.getUint32(off, true) !== 0x02014b50) throw new Error(I18N.t('verify_err_cd_sig', { i: i }));
 
             let uncompressedSize = cdView.getUint32(off + 24, true);
             const fileNameLen = cdView.getUint16(off + 28, true);
@@ -512,7 +546,7 @@
     async function readZipEntry(file, entry) {
         const lh = new Uint8Array(await file.slice(entry.offset, entry.offset + 30).arrayBuffer());
         const lhView = new DataView(lh.buffer);
-        if (lhView.getUint32(0, true) !== 0x04034b50) throw new Error('Local header 签名不匹配: ' + entry.path);
+        if (lhView.getUint32(0, true) !== 0x04034b50) throw new Error(I18N.t('verify_err_local_header', { path: entry.path }));
         const fileNameLen = lhView.getUint16(26, true);
         const extraLen = lhView.getUint16(28, true);
         const dataStart = entry.offset + 30 + fileNameLen + extraLen;

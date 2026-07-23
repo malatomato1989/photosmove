@@ -273,7 +273,84 @@ func planSingleBatch(files []FileEntry, opts BatchOpts) *Batch {
 // plus the ZIP local-file-header overhead (~64 bytes conservative budget for
 // the "manifest.json" filename + fixed 30-byte LFH + data descriptor). This
 // keeps Content-Length exact (铁律 2) so the browser shows a progress bar.
+// calculateZipSize computes the exact final ZIP size with a math formula —
+// O(num files), NO CRC32 over file contents. Byte constants mirror what
+// archive/zip's Writer actually emits (struct.go + writer.go):
+//   - local file header = 30 + name + 9 (extended-timestamp extra; Modified is
+//     always non-zero because writeBatchZip sets Modified=time.Unix(ModTime))
+//   - Store data = f.Size (Method=Store, no compression)
+//   - data descriptor = 16 (Flags|=0x8 always set); 24 when the file itself
+//     is zip64 (UncompressedSize64 > 4GB)
+//   - central directory record = 46 + name + 9 (+28 zip64 extra when the file
+//     is zip64 OR its local-header offset >= 4GB)
+//   - EOCD = 22 (+76 zip64 EOCD+locator when records>=65535 or cd size/offset
+//     >= 4GB)
+//
+// Verified byte-for-byte against calculateZipSizeLegacy by
+// TestCalculateZipSizeMatchesLegacy. Replaces the old zip.Writer simulation
+// which forced a CRC32 pass over all bytes (6-11s on a 10.5GB album).
 func calculateZipSize(files []FileEntry, opts ZipWriteOptions) int64 {
+	const (
+		fileHeaderLen       = 30
+		directoryHeaderLen  = 46
+		directoryEndLen     = 22
+		dataDescriptorLen   = 16
+		dataDescriptor64Len = 24
+		directory64EndLen   = 56
+		directory64LocLen   = 20
+		extTimestampExtra   = 9  // extended-timestamp extra field
+		zip64ExtraInCD      = 28 // zip64 extra appended in central directory record
+		manifestOverhead    = 256
+		uint32max           = 1<<32 - 1
+		uint16max           = 1<<16 - 1
+	)
+
+	seen := make(map[string]int)
+	var localSum, cdSum, offset int64
+
+	for _, f := range files {
+		name := safeZipName(f.Path)
+		if opts.FlatMode {
+			name = dedupName(flatZipName(f.Path), seen)
+		}
+		nameLen := int64(len(name))
+		isFileZip64 := uint64(f.Size) > uint32max
+
+		// local file header (30 + name + 9) + Store data + data descriptor
+		dd := int64(dataDescriptorLen)
+		if isFileZip64 {
+			dd = dataDescriptor64Len
+		}
+		entry := int64(fileHeaderLen) + nameLen + extTimestampExtra + f.Size + dd
+		localSum += entry
+
+		// central directory record (46 + name + 9 [+ 28 zip64 extra])
+		extraCD := int64(extTimestampExtra)
+		if isFileZip64 || uint64(offset) >= uint32max {
+			extraCD += zip64ExtraInCD
+		}
+		cdSum += int64(directoryHeaderLen) + nameLen + extraCD
+
+		offset += entry
+	}
+
+	total := localSum + cdSum + directoryEndLen
+	if uint64(len(files)) >= uint16max || uint64(cdSum) >= uint32max || uint64(localSum) >= uint32max {
+		total += directory64EndLen + directory64LocLen
+	}
+
+	if opts.EmitManifest {
+		total += storage.ManifestReservedSize(len(files)) + manifestOverhead
+	}
+	return total
+}
+
+// calculateZipSizeLegacy estimates ZIP size by actually running a zip.Writer
+// over fake (zero) data. Byte-exact but O(total bytes) because archive/zip
+// forces a CRC32 pass over every written byte. Retained as the oracle for
+// TestCalculateZipSizeMatchesLegacy; NOT used in production (the math-based
+// calculateZipSize above is O(num files)).
+func calculateZipSizeLegacy(files []FileEntry, opts ZipWriteOptions) int64 {
 	cw := &countWriter{}
 	zw := zip.NewWriter(cw)
 	seen := make(map[string]int)

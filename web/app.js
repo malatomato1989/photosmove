@@ -1,4 +1,4 @@
-// PhotosMove browser client — camera download
+// PhotosMove browser client — camera download (i18n: 所有文案经 I18N.t, 组3.3-3.5/5.4/4.3)
 (function () {
     'use strict';
 
@@ -46,6 +46,141 @@
     const consoleToggle = document.getElementById('console-toggle');
     const consoleBox = document.getElementById('console-box');
 
+    // --- i18n init (组3.5/5.4): 应用静态文案 + 绑定语言切换入口 ---
+    // 守卫: i18n.js 加载失败时 I18N 未定义, 不能让 app.js 在 IIFE 顶部崩溃 ——
+    // 否则末尾的 window.error 兜底 (showFatalError) 也用 I18N.t 二次崩溃 → 白屏无错误.
+    // 用不依赖 I18N 的原生提示兜底, 至少给用户一行可读信息.
+    if (typeof I18N === 'undefined') {
+        document.body.innerHTML = '<div style="padding:40px;font-family:system-ui,sans-serif;color:#991b1b;text-align:center">PhotosMove failed to load (i18n). Please reload the page.</div>';
+        return;
+    }
+    I18N.applyToDOM();
+    refreshLangLabels();
+    // card-desc / progress-downloaded 由 app.js 动态管理: 切语言时 applyToDOM 不能覆盖它们
+    // (否则进度跌回 "0 B / 0 B"). 故 index.html 上不带 data-i18n, 初始文案由这里显式设一次,
+    // 之后 updateCard / applyProgress 接管.
+    cardDesc.textContent = I18N.t('card_desc_loading');
+    progressDownloaded.textContent = I18N.t('progress_init');
+    document.querySelectorAll('[data-lang-switch]').forEach(function (el) {
+        el.addEventListener('click', showLangPicker);
+    });
+
+    function refreshLangLabels() {
+        document.querySelectorAll('[data-lang-label]').forEach(function (el) {
+            el.textContent = I18N.currentLabel();
+        });
+    }
+
+    function showLangPicker() {
+        const current = I18N.getLocale();
+        const mask = document.createElement('div');
+        mask.className = 'big-file-modal-mask';
+        const items = I18N.SUPPORTED.map(function (code) {
+            const label = code === 'zh' ? I18N.t('lang_label') : I18N.t('lang_en_label');
+            const sel = code === current;
+            return '<div data-lang-code="' + code + '" style="padding:14px 20px;cursor:pointer;border-bottom:1px solid #f0f0f0;' + (sel ? 'color:#4f46e5;font-weight:600;background:rgba(99,102,241,0.05)' : '') + '">' + (sel ? '✓ ' : '') + label + '</div>';
+        }).join('');
+        mask.innerHTML = '<div class="big-file-modal" style="max-width:280px;padding:0"><div style="padding:14px 20px;font-size:16px;text-align:center">🌐</div>' + items + '</div>';
+        document.body.appendChild(mask);
+        mask.querySelectorAll('[data-lang-code]').forEach(function (el) {
+            el.addEventListener('click', function () {
+                const code = el.getAttribute('data-lang-code');
+                mask.parentNode.removeChild(mask);
+                if (code !== current) {
+                    I18N.setLocale(code);
+                    refreshLangLabels();
+                    onLocaleChange();
+                }
+            });
+        });
+        mask.addEventListener('click', function (e) { if (e.target === mask) mask.parentNode.removeChild(mask); });
+    }
+
+    // 语言切换后重渲染动态文案. 严格保留 downloading 状态 (design Risks ④⑤:
+    // 不重启下载/不清进度). applyToDOM 只刷新带 data-i18n 的静态元素; 下载中及刚完成/
+    // 中断态动态管理的元素 (card-desc/progressAlbum/progressSpeed/progressEta/
+    // progressDownloaded/大文件块) 均无 data-i18n, 必须按当前状态机统一重渲, 否则残留
+    // 旧语言 —— 尤其 success/interrupted 态无 poll 刷新, 会永久冻结 (review finding).
+    function refreshProgressText() {
+        if (dlState.mode === 'init') {
+            progressDownloaded.textContent = I18N.t('progress_init');
+            progressSpeed.textContent = '--';
+            progressEta.textContent = '--';
+            return;
+        }
+        progressDownloaded.textContent = I18N.t('progress_downloaded', { done: formatSize(dlState.overall), total: formatSize(dlState.total) });
+        if (dlState.mode === 'complete') {
+            progressSpeed.textContent = I18N.t('progress_complete');
+            progressEta.textContent = '';
+        } else if (dlState.mode === 'interrupted') {
+            progressSpeed.textContent = I18N.t('progress_interrupted');
+            progressEta.textContent = I18N.t('progress_see_downloader');
+        } else if (dlState.mode === 'preparing' || dlState.overall === 0) {
+            progressSpeed.textContent = I18N.t('progress_preparing');
+            progressEta.textContent = '--';
+        } else if (dlState.mode === 'paused') {
+            progressSpeed.textContent = I18N.t('progress_paused');
+            progressEta.textContent = '--';
+        } else {
+            progressSpeed.textContent = formatSize(dlState.speed) + '/s';
+            progressEta.textContent = I18N.t('remaining', { time: formatTime(dlState.remaining) });
+        }
+    }
+
+    function refreshDynamicText() {
+        // card-desc (无 data-i18n, updateCard 管理): 必须与 updateCard 的全部分支一致,
+        // 否则切语言后空状态/无相机相册态会被覆盖成 loading (review 第三轮 finding).
+        if (!cachedAlbums || cachedAlbums.length === 0) {
+            cardDesc.textContent = I18N.t('no_photos');
+        } else {
+            const cameraAlbums = cachedAlbums.filter(a => a.category === 'camera');
+            if (cameraAlbums.length === 0) {
+                cardDesc.textContent = I18N.t('no_camera_photos');
+            } else {
+                const totalFiles = cameraAlbums.reduce((s, a) => s + a.file_count, 0);
+                const totalSize = cameraAlbums.reduce((s, a) => s + a.total_size, 0);
+                cardDesc.innerHTML = I18N.t('card_files_html', { count: totalFiles.toLocaleString(), size: formatSize(totalSize) });
+            }
+        }
+
+        // 按钮: 与 updateCard 一致 — downloading→cancel, complete→redownload,
+        // 无相册/无相机相册→nothing_to_download, 否则→download_all.
+        // 不调 updateCard —— 否则 success 态会把 redownload 覆盖回 download_all.
+        if (downloading) {
+            btnDownload.textContent = I18N.t('cancel_transfer');
+        } else if (dlState.mode === 'complete') {
+            btnDownload.textContent = I18N.t('redownload');
+        } else if (!cachedAlbums || cachedAlbums.length === 0) {
+            btnDownload.textContent = I18N.t('nothing_to_download');
+        } else {
+            const cameraAlbums = cachedAlbums.filter(a => a.category === 'camera');
+            if (cameraAlbums.length === 0) {
+                btnDownload.textContent = I18N.t('nothing_to_download');
+            } else {
+                const totalSize = cameraAlbums.reduce((s, a) => s + a.total_size, 0);
+                btnDownload.textContent = I18N.t('download_all', { size: formatSize(totalSize) });
+            }
+        }
+
+        // 进度区动态元素 (无 data-i18n): 仅在进度区可见时重渲 (覆盖 downloading/success/interrupted).
+        if (!progressSection.classList.contains('hidden')) {
+            if (activeAlbumMeta) progressAlbum.textContent = I18N.t(activeAlbumMeta.key, activeAlbumMeta.params);
+            refreshProgressText();
+        }
+
+        // 大文件块 (无 data-i18n, 可能停留数十分钟).
+        if (activeBigFileBatch) renderBigFileBatch(activeBigFileBatch);
+
+        // verify.js 动态元素 (无 data-i18n, 独立 IIFE): 暴露 rerender 钩子时调用.
+        if (window.photosmoveVerify && typeof window.photosmoveVerify.rerender === 'function') {
+            window.photosmoveVerify.rerender();
+        }
+    }
+
+    function onLocaleChange() {
+        refreshDynamicText();
+    }
+
     // --- Connect ---
     connectForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -54,7 +189,7 @@
         const pin = pinInput.value.trim();
         const submitBtn = connectForm.querySelector('button[type="submit"]');
         submitBtn.disabled = true;
-        submitBtn.textContent = '连接中...';
+        submitBtn.textContent = I18N.t('connecting');
 
         const authUrl = `${serverUrl}/api/auth`;
         try {
@@ -64,26 +199,26 @@
                 body: JSON.stringify({ pin }),
             });
             if (!res.ok) {
-                let errMsg = `服务器返回 ${res.status}`;
-                try { const d = await res.json(); if (d.error) errMsg = d.error; } catch (e) {}
+                // 4.3 ①: 服务端 error code 契约 → I18N.te(code), 未知 code 原样返回
+                let errMsg = I18N.t('err_server_status', { status: res.status });
+                try { const d = await res.json(); if (d.code) errMsg = I18N.te(d.code, { detail: d.detail }); else if (d.error) errMsg = d.error; } catch (e) {}
                 throw new Error(errMsg);
             }
             const data = await res.json();
             saveToken(data.token);
             showDashboard();
         } catch (err) {
-            // fetch TypeError (网络层失败) 显示完整诊断，避免只显示 "Failed to fetch"
+            // 4.3 ③: fetch 网络层失败 (TypeError, 无响应体如 Failed to fetch) → 本地化文案
             const isNetworkErr = err instanceof TypeError;
-            const hint = isNetworkErr
-                ? `<div class="err-hint">⚠ 网络层无法到达手机服务。<br>常见原因:<br>· 浏览器/系统代理 (含 VPN/Clash/V2Ray) 劫持了局域网请求 → 关闭代理或加入直连白名单<br>· 电脑和手机不在同一 WiFi / 公司或学校 WiFi 开启了客户端隔离<br>· PhotosMove APP 被系统冻结或已退出</div>`
-                : '';
+            const displayMsg = isNetworkErr ? I18N.t('network_error') : (err.message || I18N.t('err_default'));
+            const hint = isNetworkErr ? '<div class="err-hint">' + I18N.t('err_network_hint') + '</div>' : '';
             connectError.innerHTML = `
-                <div class="err-title">${err.message || '连接失败'}</div>
-                <div class="err-url">目标: ${authUrl}</div>
+                <div class="err-title">${displayMsg}</div>
+                <div class="err-url">${I18N.t('err_target', { url: authUrl })}</div>
                 ${hint}
                 <div class="err-actions">
-                    <button type="button" id="err-retry">再试一次</button>
-                    <button type="button" id="err-copy">复制诊断信息</button>
+                    <button type="button" id="err-retry">${I18N.t('err_retry')}</button>
+                    <button type="button" id="err-copy">${I18N.t('err_copy')}</button>
                 </div>`;
             connectError.classList.add('show');
             const retryBtn = document.getElementById('err-retry');
@@ -94,15 +229,16 @@
             });
             const copyBtn = document.getElementById('err-copy');
             if (copyBtn) copyBtn.addEventListener('click', () => {
-                const txt = `PhotosMove 连接失败\nURL: ${authUrl}\nPIN: ${pin}\n错误: ${err.message}\nUA: ${navigator.userAgent}\n时间: ${new Date().toISOString()}`;
+                // 诊断 dump 保持技术英文 (供反馈/排错), 不翻译
+                const txt = `PhotosMove connect failed\nURL: ${authUrl}\nPIN: ${pin}\nError: ${err.message}\nUA: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`;
                 navigator.clipboard?.writeText(txt).then(() => {
-                    copyBtn.textContent = '✓ 已复制';
-                    setTimeout(() => copyBtn.textContent = '复制诊断信息', 1500);
+                    copyBtn.textContent = I18N.t('err_copied');
+                    setTimeout(() => copyBtn.textContent = I18N.t('err_copy'), 1500);
                 }).catch(() => {});
             });
         } finally {
             submitBtn.disabled = false;
-            submitBtn.textContent = '连接手机';
+            submitBtn.textContent = I18N.t('connect_btn');
         }
     });
 
@@ -110,7 +246,7 @@
     async function showDashboard() {
         connectView.classList.add('hidden');
         dashboardView.classList.remove('hidden');
-        appendLog('服务已就绪');
+        appendLog(I18N.t('service_ready'));
         await loadAlbums();
         updateCard();
     }
@@ -120,60 +256,49 @@
             const res = await fetch(`${serverUrl}/api/albums`, {
                 headers: { 'Authorization': `Bearer ${authToken}` },
             });
-            if (!res.ok) throw new Error('获取相册失败');
+            if (!res.ok) throw new Error(I18N.t('fetch_albums_failed'));
             const data = await res.json();
             cachedAlbums = data.albums;
         } catch (err) {
-            appendLog('加载失败: ' + err.message, 'error');
+            appendLog(I18N.t('load_failed', { msg: err.message }), 'error');
         }
     }
 
     function updateCard() {
         const thumbRow = document.getElementById('thumb-row');
         if (!cachedAlbums || cachedAlbums.length === 0) {
-            cardTitle.textContent = '相机拍摄';
-            cardDesc.textContent = '未发现照片';
+            cardTitle.textContent = I18N.t('card_title');
+            cardDesc.textContent = I18N.t('no_photos');
             btnDownload.disabled = true;
-            btnDownload.textContent = '没有可下载的内容';
+            btnDownload.textContent = I18N.t('nothing_to_download');
             if (thumbRow) thumbRow.innerHTML = '';
             return;
         }
 
         const cameraAlbums = cachedAlbums.filter(a => a.category === 'camera');
         if (cameraAlbums.length === 0) {
-            cardTitle.textContent = '相机拍摄';
-            cardDesc.textContent = '未发现相机照片';
+            cardTitle.textContent = I18N.t('card_title');
+            cardDesc.textContent = I18N.t('no_camera_photos');
             btnDownload.disabled = true;
-            btnDownload.textContent = '没有可下载的内容';
+            btnDownload.textContent = I18N.t('nothing_to_download');
             if (thumbRow) thumbRow.innerHTML = '';
             return;
         }
 
         const totalFiles = cameraAlbums.reduce((s, a) => s + a.file_count, 0);
         const totalSize = cameraAlbums.reduce((s, a) => s + a.total_size, 0);
-        const totalVideos = cameraAlbums.reduce((s, a) => s + (a.video_count || 0), 0);
-        const totalVideoSize = cameraAlbums.reduce((s, a) => s + (a.video_size || 0), 0);
 
-        cardTitle.textContent = '相机拍摄';
+        cardTitle.textContent = I18N.t('card_title');
 
         // Free/Pro unified per spec §5.2 — both include videos, so the card
         // always shows total file count + size and a single "下载全部" button.
-        // The legacy "Free excludes videos → 下载全部图片" branch was a Plan A
-        // leftover that contradicted the spec.
-        cardDesc.innerHTML = `共 <strong>${totalFiles.toLocaleString()}</strong> 个文件 · <strong>${formatSize(totalSize)}</strong>`;
-        btnDownload.textContent = `下载全部 (${formatSize(totalSize)})`;
+        cardDesc.innerHTML = I18N.t('card_files_html', { count: totalFiles.toLocaleString(), size: formatSize(totalSize) });
+        btnDownload.textContent = I18N.t('download_all', { size: formatSize(totalSize) });
 
-        // verify.js 免费信任工具 (single-zip-trust-tcp Phase 2):
-        // verify-panel 仅在用户点 [完整性校验] 提交 ZIP 后才展开,
-        // 不在 dashboard 加载时主动 show() (否则会显示空白的白底面板).
-        // btn-verify 的 click handler 内部自己 panel.classList.remove('hidden').
-
+        // verify.js 免费信任工具: verify-panel 仅在用户点 [校验] 提交 ZIP 后才展开.
         btnDownload.disabled = false;
 
-        // 缩略图行: 遍历所有 camera 相册, 每个相册加载其内多张单图缩略图
-        // (/api/thumb/{idx}/{n}), 按容器宽度自适应排列 (grid auto-fill) 填满.
-        // 不再用单张 composite (camera 常只有 1 个大相册, composite 只 1 张填
-        // 不满 grid). thumb_count 由服务端 Album.ThumbCount 暴露.
+        // 缩略图行: 遍历所有 camera 相册, 每个相册加载其内多张单图缩略图.
         if (thumbRow) {
             thumbRow.innerHTML = '';
             const MAX_THUMBS = 4; // 用户反馈: 6 张偏多, 4 张足够
@@ -202,15 +327,20 @@
     let dlGeneration = 0;
     let currentBatchId = null;
     let dlSpeedSamples = [];
+    // 切语言时重渲染动态块用: 大文件块 / 当前相册标题 (二者无 data-i18n, 不补渲染残留旧语言).
+    let activeBigFileBatch = null;
+    let activeAlbumMeta = null;   // {key, params} — progressAlbum 当前文案 (albums_count/album_progress)
+    // 进度区状态机快照: 切语言时 refreshProgressText 据此重渲 speed/eta/downloaded
+    // (这些元素无 data-i18n, applyToDOM 跳过; 不快照则 success/interrupted 态切语言后文案冻结).
+    let dlState = { mode: 'idle', overall: 0, total: 0, speed: 0, remaining: Infinity };
 
     btnDownload.addEventListener('click', () => {
         // 单按钮多状态: 传输中点击 = 取消, 否则 = 开始下载.
         if (downloading) { cancelDownload(); return; }
         if (!cachedAlbums) return;
-        // HEIC 差评防护 (4.9): Free 模式 HEIC 原样保留 (不转换), Windows 默认打不开.
-        // 首次下载提示一次, localStorage 记忆"不再提示", 覆盖所有用户.
+        // HEIC 差评防护: Free 模式 HEIC 原样保留, Windows 默认打不开. 首次下载提示一次.
         if (!localStorage.getItem('photosmove_heic_warned')) {
-            const msg = '提示：HEIC 照片将原样保留（不转换）。Windows 默认无法打开 .heic，需安装"HEIF 图像扩展"或用在线工具转换。\n\n是否继续下载？';
+            const msg = I18N.t('heic_warn');
             if (!confirm(msg)) return;
             localStorage.setItem('photosmove_heic_warned', '1');
         }
@@ -218,18 +348,13 @@
         if (paths.length > 0) startDownload(paths);
     });
 
-    // btnCancel 已合并到 btnDownload (单按钮多状态): 传输中点击 btnDownload 触发 cancelDownload.
-    // Failed files panel removed (single-zip-trust-tcp Phase 2):
-    // 信任 TCP 完整性, 不再有"失败文件"概念, 无需补传 UI.
-
     async function startDownload(albumPaths) {
         if (downloading) return;
         downloading = true;
         const myGen = ++dlGeneration;
 
-        // UI: downloading state — 同一按钮显示"取消传输", 点击则取消.
         btnDownload.disabled = false;
-        btnDownload.textContent = '取消传输';
+        btnDownload.textContent = I18N.t('cancel_transfer');
         btnDownload.classList.add('downloading');
         progressSection.classList.remove('hidden');
         doneBadge.classList.add('hidden');
@@ -237,12 +362,13 @@
         progressBar.style.width = '0%';
         progressBar.classList.remove('done');
         progressPct.textContent = '0%';
-        progressSpeed.textContent = '--';
-        progressEta.textContent = '--';
-        progressDownloaded.textContent = '已传 0 B / 0 B';
+        activeAlbumMeta = null;
+        activeBigFileBatch = null;
+        dlState = { mode: 'init', overall: 0, total: 0, speed: 0, remaining: Infinity };
+        refreshProgressText();
         progressAlbum.textContent = '';
 
-        appendLog(`传输启动 · ${albumPaths.length} 个相册`, 'primary');
+        appendLog(I18N.t('transfer_start', { count: albumPaths.length }), 'primary');
 
         try {
             const selectRes = await fetch(`${serverUrl}/api/select`, {
@@ -255,8 +381,8 @@
             });
             if (myGen !== dlGeneration) return;
             if (!selectRes.ok) {
-                let errMsg = '扫描失败';
-                try { const d = await selectRes.json(); if (d.error) errMsg = d.error; } catch (e) {}
+                let errMsg = I18N.t('scan_failed_short');
+                try { const d = await selectRes.json(); if (d.code) errMsg = I18N.te(d.code, { detail: d.detail }); else if (d.error) errMsg = d.error; } catch (e) {}
                 throw new Error(errMsg);
             }
 
@@ -264,31 +390,31 @@
                 headers: { 'Authorization': `Bearer ${authToken}` },
             });
             if (myGen !== dlGeneration) return;
-            if (!batchRes.ok) throw new Error('获取批次失败');
+            if (!batchRes.ok) throw new Error(I18N.t('fetch_batches_failed'));
             const batches = await batchRes.json();
 
             if (batches.length === 0) {
                 downloading = false;
                 btnDownload.disabled = false;
-                appendLog('没有需要下载的文件', 'warning');
+                appendLog(I18N.t('no_files_to_download'), 'warning');
                 updateCard();
                 return;
             }
 
             const totalSize = batches.reduce((s, b) => s + b.total_size, 0);
-            const totalLive = batches.reduce((s, b) => s + (b.live_count || 0), 0);
-            const totalFiles = batches.reduce((s, b) => s + (b.file_count || 0), 0);
             let totalDownloaded = 0;
             let downloadedBatches = 0;
             const t0 = Date.now();
-            progressDownloaded.textContent = `已传 0 B / ${formatSize(totalSize)}`;
-            progressAlbum.textContent = `共 ${batches.length} 个相册`;
+            dlState = { mode: 'preparing', overall: 0, total: totalSize, speed: 0, remaining: Infinity };
+            refreshProgressText();
+            activeAlbumMeta = { key: 'albums_count', params: { count: batches.length } };
+            progressAlbum.textContent = I18N.t('albums_count', { count: batches.length });
 
             for (let i = 0; i < batches.length; i++) {
                 if (myGen !== dlGeneration) return;
 
                 const batch = batches[i];
-                appendLog(`批次 ${i + 1}/${batches.length}: ${batch.album_name} (${formatSize(batch.total_size)})`);
+                appendLog(I18N.t('batch_progress', { i: i + 1, n: batches.length, name: batch.album_name, size: formatSize(batch.total_size) }));
 
                 const ok = await downloadOneBatch(batch, i, batches.length, totalDownloaded, totalSize, t0);
                 if (myGen !== dlGeneration) return;
@@ -299,14 +425,6 @@
                     if (i < batches.length - 1) {
                         await new Promise(r => setTimeout(r, 1500));
                     }
-                } else if (ok === 'disconnected') {
-                    downloading = false;
-                    doneBadge.classList.add('hidden');
-                    cancelBadge.classList.add('hidden');
-                    progressSection.classList.add('hidden');
-                    btnDownload.disabled = false;
-                    btnDownload.textContent = '重新下载';
-                    return;
                 } else {
                     break;
                 }
@@ -317,21 +435,16 @@
             if (totalDownloaded > 0) {
                 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                 const avgSpeed = totalSize / parseFloat(elapsed);
-                // spec download-summary: include file count alongside size/time/speed.
-                // "跳过 N 张" omitted (only meaningful for Pro incremental sync,
-                // which has its own appendLog path above; full-download never skips).
                 const filesInDone = batches.slice(0, downloadedBatches)
                     .reduce((s, b) => s + (b.file_count || 0), 0);
-                appendLog(`✓ 全部完成 · ${filesInDone} 个文件 · ${formatSize(totalDownloaded)} · ${elapsed}s · ${formatSize(avgSpeed)}/s`, 'success');
+                appendLog(I18N.t('all_done', { files: filesInDone, size: formatSize(totalDownloaded), elapsed: elapsed, speed: formatSize(avgSpeed) }), 'success');
                 finishDownload(true);
             } else {
                 showCancelled();
             }
         } catch (err) {
             if (myGen !== dlGeneration) return;
-            appendLog('下载失败: ' + err.message, 'error');
-            // 显式清理 downloading class (finishDownload(false) 也清, 双重保险),
-            // 避免 catch 路径 UI 残留红色按钮.
+            appendLog(I18N.t('download_failed', { msg: err.message }), 'error');
             btnDownload.classList.remove('downloading');
             finishDownload(false);
         }
@@ -340,16 +453,12 @@
     function downloadOneBatch(batch, batchIdx, batchTotal, startBytes, totalSize, globalT0) {
         return new Promise((resolve) => {
             dlSpeedSamples = [];
-            progressAlbum.textContent = `相册 ${batchIdx + 1}/${batchTotal}: ${batch.album_name}`;
+            activeAlbumMeta = { key: 'album_progress', params: { i: batchIdx + 1, n: batchTotal, name: batch.album_name } };
+            progressAlbum.textContent = I18N.t('album_progress', activeAlbumMeta.params);
 
-            // T-ui-5: big-file batches get a visual highlight + a one-time
-            // confirm modal before the <a>.click() fires. Small-file
-            // batches skip this entirely.
             const isBigFileBatch = !!batch.big_file;
             if (isBigFileBatch) renderBigFileBatch(batch);
 
-            // Free 模式: 原样打包 (HEIC 原格式 / 视频字节级 / 保留目录结构),
-            // 无 convert_heic / strip_exif / live_photo_mode 参数.
             const downloadUrl = `${serverUrl}/api/batch/${batch.id}?token=${encodeURIComponent(authToken)}`;
             const gen = dlGeneration;
             const batchStartTime = Date.now();
@@ -383,15 +492,12 @@
                 const remaining = speed > 0 ? (total - overall) / speed : Infinity;
                 progressBar.style.width = pct + '%';
                 progressPct.textContent = pct + '%';
-                progressDownloaded.textContent = `已传 ${formatSize(overall)} / ${formatSize(total)}`;
-                if (sent === 0) {
-                    progressSpeed.textContent = '准备中...'; progressEta.textContent = '--';
-                } else if (hasProgress) {
-                    progressSpeed.textContent = formatSize(speed) + '/s';
-                    progressEta.textContent = '剩余 ' + formatTime(remaining);
-                } else {
-                    progressSpeed.textContent = '已暂停'; progressEta.textContent = '--';
-                }
+                dlState.overall = overall;
+                dlState.total = total;
+                dlState.speed = speed;
+                dlState.remaining = remaining;
+                dlState.mode = sent === 0 ? 'preparing' : (hasProgress ? 'active' : 'paused');
+                refreshProgressText();
             };
 
             const pollOnce = async () => {
@@ -404,7 +510,7 @@
                     lastMsg = Date.now();
                     if (pollInterrupted) {
                         pollInterrupted = false;
-                        appendLog(`✓ ${batch.album_name} 轮询恢复, 进度继续`, 'success');
+                        appendLog(I18N.t('poll_resumed', { name: batch.album_name }), 'success');
                     }
                     applyProgress(data);
                     if (data.cancelled) {
@@ -412,7 +518,7 @@
                         currentBatchId = null;
                         completed = true;
                         clearBigFileBatch();
-                        appendLog(`${batch.album_name} 下载已取消`, 'warning');
+                        appendLog(I18N.t('batch_cancelled', { name: batch.album_name }), 'warning');
                         resolve(false);
                         return;
                     }
@@ -422,32 +528,28 @@
                         completed = true;
                         clearBigFileBatch();
                         const batchElapsed = ((Date.now() - batchStartTime) / 1000).toFixed(1);
-                        appendLog(`✓ ${batch.album_name} · ${formatSize(batch.total_size)} · ${batchElapsed}s`, 'success');
+                        appendLog(I18N.t('batch_done', { name: batch.album_name, size: formatSize(batch.total_size), elapsed: batchElapsed }), 'success');
                         resolve(true);
                         return;
                     }
                 } catch (e) {
-                    console.warn('[轮询] fetch 失败:', e.message);
+                    console.warn('[poll] fetch failed:', e.message);
                 }
             };
 
             const pollTimer = setInterval(pollOnce, 1000);
-            // 看门狗: 30s 无成功响应 → 中断提示 (不假定完成)
             const watchdog = setInterval(() => {
                 if (completed) { clearInterval(watchdog); return; }
                 if (gen !== dlGeneration) { clearInterval(watchdog); clearInterval(pollTimer); resolve(false); return; }
                 if (Date.now() - lastMsg > 30000 && !pollInterrupted) {
                     pollInterrupted = true;
-                    appendLog(`⚠ ${batch.album_name} 轮询 30s 无响应, 浏览器下载可能仍在进行`, 'warning');
-                    appendLog('👉 查看浏览器下载管理器确认实际进度', 'info');
-                    progressSpeed.textContent = '轮询中断';
-                    progressEta.textContent = '见下载器';
+                    appendLog(I18N.t('poll_timeout', { name: batch.album_name }), 'warning');
+                    appendLog(I18N.t('poll_check_downloader'), 'info');
+                    dlState.mode = 'interrupted';
+                    refreshProgressText();
                 }
             }, 5000);
 
-            // Trigger native download. For big-file batches, gate the
-            // <a>.click() behind a one-time confirm modal (铁律 1: native
-            // download only, no fetch+Blob).
             (async () => {
                 if (isBigFileBatch) {
                     const ok = await confirmBigFileDownload(batch);
@@ -458,7 +560,7 @@
                         currentBatchId = null;
                         completed = true;
                         clearBigFileBatch();
-                        appendLog(`${batch.album_name} 下载已取消 (大文件确认)`, 'warning');
+                        appendLog(I18N.t('batch_bigfile_cancelled', { name: batch.album_name }), 'warning');
                         resolve(false);
                         return;
                     }
@@ -466,8 +568,6 @@
 
                 const a = document.createElement('a');
                 a.href = downloadUrl;
-                // spec batch-zip-pipeline Requirement "Free 模式切批行为":
-                // Free 和 Pro 的 a.download 文件名 MUST 一致 (批次命名, 不都是 photos.zip).
                 a.download = batch.album_name.replace(/[/\\:*?"<>|]/g, '_') + '.zip';
                 document.body.appendChild(a);
                 a.click();
@@ -481,8 +581,6 @@
         downloading = false;
         clearBigFileBatch();
 
-        // P0-2 race fix: 先快照 bid, 避免 done 分支并发清空
-        // currentBatchId 导致 cancel fetch 漏发, 服务端继续推 ZIP.
         const bid = currentBatchId;
         currentBatchId = null;
         if (bid) {
@@ -492,18 +590,16 @@
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${authToken}`,
             };
-            // 主通道: fetch
             fetch(cancelUrl, { method: 'POST', headers: cancelHeaders, body: cancelBody })
                 .catch(err => {
                     console.warn('cancel fetch failed, trying sendBeacon:', err);
-                    // 备选通道: sendBeacon (不受页面卸载/浏览器网络限制影响)
                     const blob = new Blob([cancelBody], { type: 'application/json' });
                     const sent = navigator.sendBeacon(
                         cancelUrl + '?token=' + encodeURIComponent(authToken),
                         blob
                     );
                     if (!sent) {
-                        appendLog('取消请求可能未送达, 请检查手机端状态', 'warning');
+                        appendLog(I18N.t('cancel_not_sent'), 'warning');
                     }
                 });
         }
@@ -511,12 +607,7 @@
         progressSection.classList.add('hidden');
         doneBadge.classList.add('hidden');
         showCancelled();
-        // a.click() 触发的浏览器原生下载无法被 JS 立即中止, 服务端 cancel 后
-        // HTTP 响应中断, 浏览器会在几秒内停止接收. 提示用户避免困惑.
-        appendLog('已取消, 浏览器下载管理器可能仍显示几秒进度后停止', 'info');
-        // UX 节流: 服务端 handleBatch 退出 + activeDownloads-- 有延迟 (archiver
-        // ctx.Done → writeBatchZip 返回 → defer). 这期间用户立即点新下载会被
-        // /api/select 拒绝 (409 "下载进行中"). 禁用按钮 1.5s 避免误触.
+        appendLog(I18N.t('cancelled_notice'), 'info');
         btnDownload.disabled = true;
         setTimeout(() => { btnDownload.disabled = false; }, 1500);
     }
@@ -532,29 +623,26 @@
             progressBar.style.width = '100%';
             progressBar.classList.add('done');
             progressPct.textContent = '100%';
-            progressSpeed.textContent = '✓ 完成';
-            progressEta.textContent = '';
-            progressDownloaded.textContent = progressDownloaded.textContent.split(' / ')[0] + ' / ' + progressDownloaded.textContent.split(' / ')[1];
-            doneBadge.textContent = '✓ 传输完成';
+            dlState.mode = 'complete';
+            refreshProgressText(); // speed=完成, eta 空, downloaded 保留当前 overall/total
+            doneBadge.textContent = I18N.t('done_badge');
             doneBadge.classList.remove('hidden');
-            btnDownload.textContent = '重新下载';
+            btnDownload.textContent = I18N.t('redownload');
             btnDownload.disabled = false;
         } else {
-            // 失败/中断: 必须完整重置 UI 状态. 之前只调 updateCard() 导致
-            // progressSection 卡在显示、btnDownload.downloading class 残留、
-            // 按钮文字虽然重置但视觉状态错乱 (前端 QA 在连续 start→cancel
-            // + /api/select 返回"下载进行中"场景下复现).
             doneBadge.classList.add('hidden');
             cancelBadge.classList.add('hidden');
             progressSection.classList.add('hidden');
             btnDownload.classList.remove('downloading');
             btnDownload.disabled = false;
+            dlState.mode = 'idle';
             updateCard();
         }
     }
 
     function showCancelled() {
         downloading = false;
+        dlState.mode = 'idle';
         doneBadge.classList.add('hidden');
         cancelBadge.classList.remove('hidden');
         progressSection.classList.add('hidden');
@@ -573,7 +661,7 @@
         type = type || 'info';
         const container = document.getElementById('live-logs');
         const p = document.createElement('p');
-        const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        const ts = new Date().toLocaleTimeString(I18N.getLocale() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false });
         const classMap = {
             info: 'log-info',
             success: 'log-success',
@@ -608,13 +696,7 @@
         return Math.max(1, Math.round(seconds / 60)) + 'm';
     }
 
-    // --- Big-file batch highlight (T-ui-5) ---
-    // Renders an inline highlight block inside the main card while a
-    // big_file batch is being downloaded, plus a one-time confirm modal
-    // before the first such download. Field shape (server T-big-3.3):
-    //   batch.big_file: true
-    //   batch.biggest_file: { name, size }
-    //   batch.estimated_wifi_seconds, batch.estimated_usb_seconds
+    // --- Big-file batch highlight ---
     const BIG_FILE_CONFIRM_KEY = 'photosmove_big_file_confirmed';
 
     function getBigFileConfirmed() {
@@ -636,6 +718,7 @@
     }
 
     function renderBigFileBatch(batch) {
+        activeBigFileBatch = batch;
         const block = ensureBigFileBlock();
         const cardEl = document.querySelector('.main-card');
         if (cardEl) cardEl.classList.add('big-file');
@@ -648,14 +731,15 @@
         block.innerHTML =
             '<div style="margin-top:10px;text-align:left">' +
               '<span style="color:#f59e0b;font-size:14px">⚠️</span>' +
-              '<span class="big-file-chip">★ 大文件</span>' +
-              '<div class="estimated-time">批次大小: ' + sizeStr + ' · ' + escapeHtml(name) + ' (单文件, 不可拆分)</div>' +
-              '<div class="estimated-time">预估传输: WiFi ~ ' + wifiMin + ' / USB ~ ' + usbMin + '</div>' +
-              '<div class="big-file-warning">⚠️ 中断需重传整批, 建议保持手机唤醒</div>' +
+              '<span class="big-file-chip">' + I18N.t('bigfile_chip') + '</span>' +
+              '<div class="estimated-time">' + I18N.t('bigfile_batch_size', { size: sizeStr, name: escapeHtml(name) }) + '</div>' +
+              '<div class="estimated-time">' + I18N.t('bigfile_estimate', { wifi: wifiMin, usb: usbMin }) + '</div>' +
+              '<div class="big-file-warning">' + I18N.t('bigfile_warning') + '</div>' +
             '</div>';
     }
 
     function clearBigFileBatch() {
+        activeBigFileBatch = null;
         const block = document.getElementById('big-file-info-block');
         if (block) block.innerHTML = '';
         const cardEl = document.querySelector('.main-card');
@@ -680,14 +764,13 @@
             mask.className = 'big-file-modal-mask';
             mask.innerHTML =
                 '<div class="big-file-modal">' +
-                  '<h3>⚠️ 大文件下载确认</h3>' +
-                  '<div class="big-file-modal-row"><span class="label">批次大小</span><span>' + escapeHtml(sizeStr) + '</span></div>' +
-                  '<div class="big-file-modal-row"><span class="label">预估传输</span><span>WiFi ' + escapeHtml(wifiMin) + ' / USB ' + escapeHtml(usbMin) + '</span></div>' +
-                  '<div class="big-file-modal-warn">⚠️ 中断需重传整批, 建议保持手机唤醒.<br>' +
-                    '浏览器"恢复下载"按钮无效, 中断请重新点 [下载].</div>' +
+                  '<h3>' + I18N.t('bigfile_modal_title') + '</h3>' +
+                  '<div class="big-file-modal-row"><span class="label">' + I18N.t('bigfile_modal_size') + '</span><span>' + escapeHtml(sizeStr) + '</span></div>' +
+                  '<div class="big-file-modal-row"><span class="label">' + I18N.t('bigfile_modal_estimate') + '</span><span>WiFi ' + escapeHtml(wifiMin) + ' / USB ' + escapeHtml(usbMin) + '</span></div>' +
+                  '<div class="big-file-modal-warn">' + I18N.t('bigfile_modal_warn') + '</div>' +
                   '<div class="big-file-modal-actions">' +
-                    '<button class="btn-cancel-modal">取消</button>' +
-                    '<button class="btn-start-modal">开始下载</button>' +
+                    '<button class="btn-cancel-modal">' + I18N.t('bigfile_modal_cancel') + '</button>' +
+                    '<button class="btn-start-modal">' + I18N.t('bigfile_modal_start') + '</button>' +
                   '</div>' +
                 '</div>';
             document.body.appendChild(mask);
@@ -705,15 +788,15 @@
     }
 
     function formatTime(seconds) {
-        if (!isFinite(seconds) || seconds < 0) return '计算中...';
+        if (!isFinite(seconds) || seconds < 0) return I18N.t('time_calculating');
         const totalSec = Math.ceil(seconds);
-        if (totalSec < 60) return totalSec + '秒';
+        if (totalSec < 60) return I18N.t('time_seconds', { n: totalSec });
         const m = Math.floor(totalSec / 60);
         const s = totalSec % 60;
-        if (m < 60) return m + '分' + s + '秒';
+        if (m < 60) return I18N.t('time_minutes', { m: m, s: s });
         const h = Math.floor(m / 60);
         const rm = m % 60;
-        return h + '时' + rm + '分';
+        return I18N.t('time_hours', { h: h, m: rm });
     }
 
     // --- Auto-restore ---
@@ -737,22 +820,20 @@
         }
     })();
 
-    // 全局错误兜底 (single-zip-trust-tcp 调试): 任何未捕获异常都显示在
-    // #connect-error 上, 避免"白屏无错误"无法诊断.
+    // 全局错误兜底: 任何未捕获异常都显示在 #connect-error 上, 避免"白屏无错误".
     function showFatalError(source, err) {
         const msg = err && err.message ? err.message : String(err);
         const stack = err && err.stack ? err.stack : '';
         const target = document.getElementById('connect-error') || document.body;
         const box = document.createElement('div');
         box.style.cssText = 'background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:16px 18px;margin:18px;text-align:left;color:#991b1b;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.6';
-        box.innerHTML = `
-            <div style="font-weight:700;font-size:15px;margin-bottom:8px">⚠ PhotosMove 前端崩溃 (${source})</div>
-            <div style="margin-bottom:6px">错误: ${msg.replace(/</g, '&lt;')}</div>
-            <pre style="white-space:pre-wrap;word-break:break-all;font-size:11px;max-height:240px;overflow:auto;background:#fff;padding:8px;border-radius:6px;border:1px solid #fee2e2">${stack.replace(/</g, '&lt;')}</pre>
-            <div style="margin-top:8px;color:#6b7280;font-size:11px">UA: ${navigator.userAgent}</div>
-            <div style="margin-top:6px;color:#6b7280;font-size:11px">URL: ${location.href}</div>
-            <button id="fatal-reload" style="margin-top:10px;padding:8px 16px;background:#7c3aed;color:white;border:none;border-radius:8px;cursor:pointer">刷新页面</button>
-        `;
+        box.innerHTML =
+            '<div style="font-weight:700;font-size:15px;margin-bottom:8px">' + I18N.t('fatal_title', { source: source }) + '</div>' +
+            '<div style="margin-bottom:6px">' + I18N.t('fatal_error', { msg: msg.replace(/</g, '&lt;') }) + '</div>' +
+            '<pre style="white-space:pre-wrap;word-break:break-all;font-size:11px;max-height:240px;overflow:auto;background:#fff;padding:8px;border-radius:6px;border:1px solid #fee2e2">' + stack.replace(/</g, '&lt;') + '</pre>' +
+            '<div style="margin-top:8px;color:#6b7280;font-size:11px">UA: ' + navigator.userAgent + '</div>' +
+            '<div style="margin-top:6px;color:#6b7280;font-size:11px">URL: ' + location.href + '</div>' +
+            '<button id="fatal-reload" style="margin-top:10px;padding:8px 16px;background:#7c3aed;color:white;border:none;border-radius:8px;cursor:pointer">' + I18N.t('fatal_reload') + '</button>';
         target.appendChild(box);
         const btn = box.querySelector('#fatal-reload');
         if (btn) btn.addEventListener('click', () => location.reload());

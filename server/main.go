@@ -83,9 +83,11 @@ func generateToken() string {
 }
 
 func getLANIP() string {
-	// 最可靠: net.Dial udp 到外部地址, LocalAddr 即本机出口 IP.
-	// 不实际发包, 只查路由表; 在 Android/gomobile 上比 net.InterfaceAddrs 枚举鲁棒
-	// (后者在部分 Android 版本拿不到 wlan0 地址 → 误报 localhost, PC 连不上).
+	// Most reliable: net.Dial udp to an external address; LocalAddr is the
+	// local egress IP. No packets are actually sent, only the routing table is
+	// consulted; on Android/gomobile this is more robust than enumerating
+	// net.InterfaceAddrs (the latter fails to get the wlan0 address on some
+	// Android versions → falsely reports localhost, and the PC cannot connect).
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err == nil {
 		defer conn.Close()
@@ -93,7 +95,7 @@ func getLANIP() string {
 			return addr.IP.String()
 		}
 	}
-	// fallback: 接口枚举
+	// fallback: interface enumeration
 	addrs, err := net.InterfaceAddrs()
 	if err == nil {
 		for _, addr := range addrs {
@@ -102,6 +104,7 @@ func getLANIP() string {
 			}
 		}
 	}
-	// 最后兜底 0.0.0.0 (listen 本就是 0.0.0.0, 至少不误导用户用 localhost 连自己)
+	// Final fallback 0.0.0.0 (listen is 0.0.0.0 anyway; at least it doesn't
+	// mislead the user into connecting to themselves via localhost)
 	return "0.0.0.0"
 }

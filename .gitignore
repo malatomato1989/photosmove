@@ -48,6 +48,8 @@ server/coverage.html
 # Temp/test files
 Plan.md
 *.png
+!android/app/src/main/res/mipmap-*/*.png
+!web/logo.png
 demo.png
 e.png
 thumb_test.jpg
@@ -62,6 +64,9 @@ functions.md
 mvp.txt
 qa_test.js
 zapix_master_plan.md
+
+# Internal working docs (maintained locally, not version-controlled)
+docs/play-store-compliance.md
 
 # macOS
 .DS_Store

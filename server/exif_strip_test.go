@@ -1,14 +1,18 @@
 package main
 
-// 端到端 EXIF 抹除回归测试.
+// End-to-end EXIF stripping regression tests.
 //
-// 背景: stripExifFromJpeg 曾用 IfdBuilder.NextIb() 遍历 IFD 树, 而 NextIb 是
-// EXIF 兄弟 IFD 链 (IFD0→IFD1 缩略图), 既跳过 rootIb 自身 (Make/Model/DateTime/
-// Artist/Copyright) 又进不了子 IFD (ExifIFD/GPSInfo), 导致 Pro 模式 EXIF 5 类抹除
-// 实际是静默 no-op. 这组测试用真实带 EXIF 的 JPEG 断言抹除真的生效, 防止回退.
+// Background: stripExifFromJpeg used to traverse the IFD tree with
+// IfdBuilder.NextIb(), but NextIb walks the EXIF sibling IFD chain (IFD0→IFD1
+// thumbnail), which both skips rootIb itself (Make/Model/DateTime/Artist/
+// Copyright) and cannot enter child IFDs (ExifIFD/GPSInfo), making the Pro
+// mode 5-category EXIF stripping effectively a silent no-op. These tests use
+// real EXIF-bearing JPEGs to assert stripping actually takes effect and
+// prevent regression.
 //
-// 样本来自 dsoprea module cache (真实相机/手机照片), 见 testdata/exif-samples/.
-// 缺失时 skip 而非 fail (CI 无样本环境).
+// Samples come from the dsoprea module cache (real camera/phone photos), see
+// testdata/exif-samples/. Skip instead of fail when missing (CI has no sample
+// environment).
 
 import (
 	"crypto/sha256"
@@ -27,8 +31,9 @@ import (
 	jpegstructure "github.com/dsoprea/go-jpeg-image-structure/v2"
 )
 
-// enumerateExifTags 扁平化 JPEG 全树所有 (ifdPath, tagId) 为 "ifdPath|0xHHHH" key 集合.
-// 递归覆盖 root + 子 IFD + 兄弟链 (与 stripExifFromJpeg 修复后的遍历同构).
+// enumerateExifTags flattens every (ifdPath, tagId) of the full JPEG tree into
+// an "ifdPath|0xHHHH" key set. Recursively covers root + child IFDs + sibling
+// chain (isomorphic to stripExifFromJpeg's post-fix traversal).
 func enumerateExifTags(t *testing.T, data []byte) map[string]bool {
 	t.Helper()
 	parser := &jpegstructure.JpegMediaParser{}
@@ -42,7 +47,7 @@ func enumerateExifTags(t *testing.T, data []byte) map[string]bool {
 	}
 	rootIfd, _, err := sl.Exif()
 	if err != nil {
-		return map[string]bool{} // 无 EXIF
+		return map[string]bool{} // no EXIF
 	}
 	out := map[string]bool{}
 	var walk func(*exif.Ifd)
@@ -62,7 +67,7 @@ func enumerateExifTags(t *testing.T, data []byte) map[string]bool {
 	return out
 }
 
-// catKeys 返回某类别所有 (ifdPath, tagId) key (来自 exifCategoryTags).
+// catKeys returns all (ifdPath, tagId) keys of a category (from exifCategoryTags).
 func catKeys(cat string) map[string]bool {
 	out := map[string]bool{}
 	for path, ids := range exifCategoryTags[cat] {
@@ -73,9 +78,10 @@ func catKeys(cat string) map[string]bool {
 	return out
 }
 
-// exifSampleJpgs 返回真实带 EXIF 的测试 JPEG. 优先用项目 testdata (本地开发),
-// 缺失时自举自 dsoprea module cache (Go 依赖必有, CI 无 testdata 也能跑).
-// gps.jpg (197KB) 跨 IFD0 (Make/Model) + GPSInfo + ExifIFD, 覆盖 gps/time/device.
+// exifSampleJpgs returns real EXIF-bearing test JPEGs. Prefers project testdata
+// (local dev); when missing, bootstraps from the dsoprea module cache (Go deps
+// always exist, so CI without testdata can still run).
+// gps.jpg (197KB) spans IFD0 (Make/Model) + GPSInfo + ExifIFD, covering gps/time/device.
 func exifSampleJpgs(t *testing.T) []string {
 	t.Helper()
 	if ms, _ := filepath.Glob("testdata/exif-samples/*.jpg"); len(ms) > 0 {
@@ -105,8 +111,9 @@ func jpegDecodes(t *testing.T, data []byte, label string) {
 	}
 }
 
-// TestExifStrip_RealJpeg_RemovesTargetTags: 全 5 类抹除, 目标必须消失, 非目标保留,
-// 无新增 tag, JPEG 仍可解码, 字节 hash 必变 (不再是 no-op).
+// TestExifStrip_RealJpeg_RemovesTargetTags: strip all 5 categories — targets
+// must disappear, non-targets kept, no new tags added, JPEG still decodable,
+// byte hash must change (no longer a no-op).
 func TestExifStrip_RealJpeg_RemovesTargetTags(t *testing.T) {
 	samples := exifSampleJpgs(t)
 	if len(samples) == 0 {
@@ -134,8 +141,9 @@ func TestExifStrip_RealJpeg_RemovesTargetTags(t *testing.T) {
 
 		stripped, err := stripExifFromJpeg(data, allCats)
 		if err != nil {
-			// FUJI 等含 unparseable tag 的样本: ConstructExifBuilder 报错,
-			// archiver 会回退原图. 记录但不 fail (已知 dsoprea 限制).
+			// Samples like FUJI that contain unparseable tags: ConstructExifBuilder
+			// errors out and the archiver falls back to the original image. Log but
+			// do not fail (known dsoprea limitation).
 			t.Logf("[%s] strip returned err (expected for some cameras): %v", name, err)
 			continue
 		}
@@ -190,9 +198,11 @@ func TestExifStrip_RealJpeg_RemovesTargetTags(t *testing.T) {
 	t.Logf("total target tags hit across samples: %d", totalHit)
 }
 
-// TestExifStrip_PerCategory_NoCollateral: 只 strip 一类, 不得误删非该类目标.
-// 注: GPSTimeStamp(0x0007)/GPSDateStamp(0x001D) 同时归入 gps 与 time 类
-// (见 exifCategoryTags), strip gps 删它们是正确的, 不算误伤.
+// TestExifStrip_PerCategory_NoCollateral: strip one category only; must not
+// delete anything outside that category's targets.
+// Note: GPSTimeStamp(0x0007)/GPSDateStamp(0x001D) belong to both the gps and
+// time categories (see exifCategoryTags), so stripping gps deleting them is
+// correct, not collateral damage.
 func TestExifStrip_PerCategory_NoCollateral(t *testing.T) {
 	samples := exifSampleJpgs(t)
 	if len(samples) == 0 {
@@ -218,13 +228,14 @@ func TestExifStrip_PerCategory_NoCollateral(t *testing.T) {
 			after := enumerateExifTags(t, stripped)
 
 			var leaked, collateral []string
-			// 本类目标: 存在的应被删.
+			// This category's targets: present ones must be deleted.
 			for k := range thisTarget {
 				if before[k] && after[k] {
 					leaked = append(leaked, k)
 				}
 			}
-			// 误伤 = 被删且不属于当前类目标 (含非目标 tag 与其他类独有 tag).
+			// Collateral = deleted but not part of the current category targets
+			// (includes non-target tags and tags unique to other categories).
 			for k := range before {
 				if before[k] && !after[k] && !thisTarget[k] {
 					collateral = append(collateral, k)
@@ -240,8 +251,10 @@ func TestExifStrip_PerCategory_NoCollateral(t *testing.T) {
 	}
 }
 
-// TestExifStrip_DateTimeErased: strip time 类后, 生产函数 readExifDateTime
-// 必须读不出 DateTimeOriginal (归零). 用独立的生产代码路径交叉验证枚举结果.
+// TestExifStrip_DateTimeErased: after stripping the time category, the
+// production function readExifDateTime must no longer read DateTimeOriginal
+// (zeroed). Cross-validates the enumeration result via an independent
+// production code path.
 func TestExifStrip_DateTimeErased(t *testing.T) {
 	samples := exifSampleJpgs(t)
 	if len(samples) == 0 {

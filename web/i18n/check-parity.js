@@ -1,13 +1,17 @@
 #!/usr/bin/env node
-// web/i18n/check-parity.js — 校验 zh.js / en.js 翻译表一致性 (spec Req6 / tasks 6.1).
+// web/i18n/check-parity.js — verify consistency of the zh.js / en.js translation tables
+// (spec Req6 / tasks 6.1).
 //
-// design.md Risk: 「strings.xml 默认改英文后, 若漏翻某 key, 中文系统下回退显示英文」
-// → 此脚本把 zh/en key 集合一致性固化为可重复的构建/CI 保障, 防回归.
+// design.md Risk: "After strings.xml's default is switched to English, if a key is left
+// untranslated, a Chinese-locale system falls back to showing English"
+// → this script bakes zh/en key-set consistency into a repeatable build/CI guarantee
+// against regressions.
 //
-// 比对:
-//   ① ui + errors 两个命名空间的 key 集合 (多/少 key = 漏翻)
-//   ② 每个 key 的 {param} 占位符集合 (en 有 zh 没有 → 插值空, 或反之 → 文案残缺)
-// 失败 exit 1; 挂 android preBuild (亦可 node 直接跑).
+// Comparisons:
+//   ① key sets of the ui + errors namespaces (extra/missing key = missed translation)
+//   ② the {param} placeholder set of each key (present in en but not zh → empty
+//     interpolation, or vice versa → broken copy)
+// Exits 1 on failure; hooked into android preBuild (can also be run directly with node).
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -15,7 +19,8 @@ const vm = require('vm');
 const repoRoot = path.join(__dirname, '..', '..');
 const dir = path.join(__dirname, 'locales');
 
-// zh.js/en.js 用 `window.PHOTOSMOVE_I18N = ...` 赋值; node 无 window, 用 vm 沙箱 shim.
+// zh.js/en.js assign via `window.PHOTOSMOVE_I18N = ...`; node has no window, so shim it
+// with a vm sandbox.
 function load(file) {
     const src = fs.readFileSync(path.join(dir, file), 'utf8');
     const ctx = { window: {} };
@@ -24,7 +29,8 @@ function load(file) {
     return ctx.window.PHOTOSMOVE_I18N;
 }
 
-// 从 Android strings.xml 提取 <string name="xxx"> key 集合 (不取值, 仅校验存在性).
+// Extract the <string name="xxx"> key set from Android strings.xml (keys only, values
+// ignored — existence check).
 function loadAndroidStrings(file) {
     const src = fs.readFileSync(file, 'utf8');
     const keys = [];
@@ -34,7 +40,8 @@ function loadAndroidStrings(file) {
     return new Set(keys);
 }
 
-// load('xx.js') 返回 { xx: {ui, errors} } (locale 文件写 window.PHOTOSMOVE_I18N.xx), 取 .xx 得 table.
+// load('xx.js') returns { xx: {ui, errors} } (locale files write window.PHOTOSMOVE_I18N.xx);
+// take .xx to get the table.
 const zh = load('zh.js').zh || {};
 const en = load('en.js').en || {};
 
@@ -43,23 +50,24 @@ function fail(msg) { console.error('  ✗ ' + msg); failures++; }
 
 const placeholders = s => (String(s).match(/\{(\w+)\}/g) || []).sort().join(',');
 
-// --- web: zh.js / en.js (ui + errors 命名空间 key 集合 + 占位符) ---
+// --- web: zh.js / en.js (ui + errors namespace key sets + placeholders) ---
 for (const ns of ['ui', 'errors']) {
     const zk = Object.keys((zh && zh[ns]) || {});
     const ek = Object.keys((en && en[ns]) || {});
     const zhOnly = zk.filter(k => !ek.includes(k));
     const enOnly = ek.filter(k => !zk.includes(k));
-    if (zhOnly.length) fail(`[web.${ns}] zh 有 en 无: ${zhOnly.join(', ')}`);
-    if (enOnly.length) fail(`[web.${ns}] en 有 zh 无: ${enOnly.join(', ')}`);
+    if (zhOnly.length) fail(`[web.${ns}] in zh but not en: ${zhOnly.join(', ')}`);
+    if (enOnly.length) fail(`[web.${ns}] in en but not zh: ${enOnly.join(', ')}`);
     for (const k of zk.filter(k => ek.includes(k))) {
         const pz = placeholders(zh[ns][k]);
         const pe = placeholders(en[ns][k]);
-        if (pz !== pe) fail(`[web.${ns}].${k} 占位符不一致: zh={${pz}} en={${pe}}`);
+        if (pz !== pe) fail(`[web.${ns}].${k} placeholder mismatch: zh={${pz}} en={${pe}}`);
     }
 }
 
-// --- android: values/ (英文默认) / values-zh/ (zh 兜底, 覆盖 zh-TW 等) /
-//     values-zh-rCN/ (zh-CN 精确) 三份 strings.xml key 集合须完全一致.
+// --- android: values/ (English default) / values-zh/ (zh fallback, covers zh-TW etc.) /
+//     values-zh-rCN/ (zh-CN exact) — the key sets of all strings.xml files must match
+//     exactly.
 const androidRes = path.join(repoRoot, 'android', 'app', 'src', 'main', 'res');
 const androidStringFiles = {
     'values': path.join(androidRes, 'values', 'strings.xml'),
@@ -69,7 +77,7 @@ const androidStringFiles = {
 };
 const androidKeySets = {};
 for (const [label, file] of Object.entries(androidStringFiles)) {
-    if (!fs.existsSync(file)) { fail(`[android.strings] 缺失 ${file}`); androidKeySets[label] = new Set(); continue; }
+    if (!fs.existsSync(file)) { fail(`[android.strings] missing ${file}`); androidKeySets[label] = new Set(); continue; }
     androidKeySets[label] = loadAndroidStrings(file);
 }
 const androidLabels = Object.keys(androidKeySets);
@@ -79,13 +87,15 @@ for (let i = 0; i < androidLabels.length; i++) {
         const ka = androidKeySets[a], kb = androidKeySets[b];
         const aOnly = [...ka].filter(k => !kb.has(k));
         const bOnly = [...kb].filter(k => !ka.has(k));
-        if (aOnly.length) fail(`[android.strings] ${a}/ 有 ${b}/ 无: ${aOnly.join(', ')}`);
-        if (bOnly.length) fail(`[android.strings] ${b}/ 有 ${a}/ 无: ${bOnly.join(', ')}`);
+        if (aOnly.length) fail(`[android.strings] in ${a}/ but not ${b}/: ${aOnly.join(', ')}`);
+        if (bOnly.length) fail(`[android.strings] in ${b}/ but not ${a}/: ${bOnly.join(', ')}`);
     }
 }
 
-// --- server↔frontend: handler.go 发射的 E_XXX code 集合 须与 zh.js/en.js errors 命名空间一致.
-// 防「服务端新增 writeErr(w,503,"E_NEW_CODE") 但忘更新 zh/en」→ 用户看到原始 code 字符串.
+// --- server↔frontend: the set of E_XXX codes emitted by handler.go must match the
+// errors namespace in zh.js/en.js.
+// Guards against "server adds writeErr(w,503,"E_NEW_CODE") but forgets to update zh/en"
+// → the user would see the raw code string.
 const handlerGo = path.join(repoRoot, 'server', 'handler.go');
 if (fs.existsSync(handlerGo)) {
     const goSrc = fs.readFileSync(handlerGo, 'utf8');
@@ -96,16 +106,16 @@ if (fs.existsSync(handlerGo)) {
     const frontendCodes = new Set(Object.keys((zh && zh.errors) || {}));
     const serverOnly = [...serverCodes].filter(c => !frontendCodes.has(c));
     const frontendOnly = [...frontendCodes].filter(c => !serverCodes.has(c));
-    if (serverOnly.length) fail(`[error-contract] server 发射但前端 errors 无翻译: ${serverOnly.join(', ')}`);
-    if (frontendOnly.length) fail(`[error-contract] 前端 errors 翻译但 server 不发射: ${frontendOnly.join(', ')}`);
+    if (serverOnly.length) fail(`[error-contract] emitted by server but untranslated in frontend errors: ${serverOnly.join(', ')}`);
+    if (frontendOnly.length) fail(`[error-contract] translated in frontend errors but never emitted by server: ${frontendOnly.join(', ')}`);
 } else {
-    fail('[error-contract] server/handler.go 不存在, 跳过 server↔frontend parity');
+    fail('[error-contract] server/handler.go does not exist; skipping server↔frontend parity');
 }
 
 if (failures === 0) {
-    console.log('i18n parity OK: web zh/en + android values/values-zh/values-zh-rCN/values-b+zh+Hant + server↔frontend error code 一致');
+    console.log('i18n parity OK: web zh/en + android values/values-zh/values-zh-rCN/values-b+zh+Hant + server↔frontend error codes all consistent');
     process.exit(0);
 } else {
-    console.error(`i18n parity 失败: ${failures} 处不一致`);
+    console.error(`i18n parity FAILED: ${failures} inconsistencies`);
     process.exit(1);
 }

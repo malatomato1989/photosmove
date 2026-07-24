@@ -1,25 +1,26 @@
 #!/bin/bash
-# photosmove Android 构建薄封装（委托 Gradle）
+# photosmove Android build thin wrapper (delegates to Gradle)
 #
-#   bash build.sh          → ./gradlew :app:bundleRelease，产出 release AAB
+#   bash build.sh          → ./gradlew :app:bundleRelease, produces release AAB
 #                            app/build/outputs/bundle/release/app-release.aab
-#   bash build.sh -i       → ./gradlew :app:installDebug，开发装机到真机
+#   bash build.sh -i       → ./gradlew :app:installDebug, dev install to a real device
 #
-# 说明：自 v0.13 起构建体系迁至 Gradle（AGP 8.7 + Gradle 8.9），
-#       旧的 aapt2/d8 手写流程已退役。Go 二进制由 app/build.gradle.kts 的 goBuild task 交叉编译。
+# Note: since v0.13 the build system has moved to Gradle (AGP 8.7 + Gradle 8.9);
+#       the old hand-written aapt2/d8 flow is retired. The Go binary is cross-compiled
+#       by the goBuild task in app/build.gradle.kts.
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
 case "$1" in
     --install|-i)
-        echo "=== ./gradlew :app:installDebug（开发装机）==="
+        echo "=== ./gradlew :app:installDebug (dev install) ==="
         ./gradlew :app:installDebug
         echo ""
-        echo "✅ Debug APK 已安装到真机"
+        echo "✅ Debug APK installed to device"
         ;;
     *)
-        echo "=== ./gradlew :app:bundleRelease（产出 AAB）==="
+        echo "=== ./gradlew :app:bundleRelease (produces AAB) ==="
         ./gradlew :app:bundleRelease
         AAB="app/build/outputs/bundle/release/app-release.aab"
         if [ -f "$AAB" ]; then

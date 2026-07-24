@@ -236,7 +236,7 @@
             android:visibility="gone"
             android:layout_marginBottom="@dimen/spacing_lg" />
 
-        <!-- 隐私政策入口 (Play 合规: 应用内可访问, 点击用系统浏览器打开) -->
+        <!-- Privacy policy entry (Play compliance: accessible in-app, tap opens system browser) -->
         <TextView
             android:id="@+id/privacy_link"
             android:layout_width="wrap_content"

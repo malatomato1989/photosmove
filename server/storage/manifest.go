@@ -5,7 +5,7 @@
 // a manifest.json entry recording SHA-256 + original_path + size for every
 // packed file. The manifest is padded with spaces (RFC 8259 JSON-safe) to a
 // pre-reserved byte count so the archive's Content-Length can be declared up
-// front (铁律 2).
+// front (iron rule 2).
 package storage
 
 import (

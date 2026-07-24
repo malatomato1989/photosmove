@@ -10,19 +10,20 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * i18n locale 管理 (design D2). 纯原生方案, 不引入 AppCompat.
+ * i18n locale management (design D2). Pure native approach, no AppCompat.
  *
- * 优先级: 用户手动选择 > 系统语言 > 英文兜底.
- *  - API 33+ : android.app.LocaleManager (系统级 per-app 语言, 自动接入系统设置)
- *  - API 26-32: attachBaseContext 用 Configuration.setLocale + createConfigurationContext wrap
+ * Priority: user manual selection > system language > English fallback.
+ *  - API 33+ : android.app.LocaleManager (system-level per-app language, auto-integrated with system settings)
+ *  - API 26-32: attachBaseContext wraps via Configuration.setLocale + createConfigurationContext
  *
- * 加新语言 = LANGUAGES 注册表加一项 + 建 values-xx/strings.xml (spec Req4 声明性登记, 零逻辑改动).
+ * Adding a new language = add one entry to the LANGUAGES registry + create values-xx/strings.xml
+ * (spec Req4 declarative registration, zero logic changes).
  */
 public final class LocaleHelper {
     private static final String PREFS = "photosmove_locale";
     private static final String KEY = "locale";
 
-    /** 支持语言注册表: code → 显示名. 新增语言在此加一项即可. */
+    /** Supported language registry: code → display name. Add one entry here for a new language. */
     public static final Map<String, String> LANGUAGES = new LinkedHashMap<>();
     static {
         LANGUAGES.put("zh", "中文");
@@ -35,18 +36,20 @@ public final class LocaleHelper {
         return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
-    /** 用户手动选择的 code; null = 未选(跟随系统). */
+    /** User's manually selected code; null = not selected (follow system). */
     public static String getManual(Context ctx) {
         String v = prefs(ctx).getString(KEY, null);
         return (v != null && LANGUAGES.containsKey(v)) ? v : null;
     }
 
     /**
-     * 当前生效 code: 手动选择 > 系统语言匹配 > 英文兜底.
-     * API 33+: 优先读 LocaleManager — 用户可能通过系统设置改了 app 语言, 此时
-     * prefs (仅在 apply() 内写) 尚未同步, 直接读 prefs 会让语言按钮错标.
-     * LocaleManager 为空 (用户在系统设置清了 per-app 语言 = 跟随系统) 时, 跳过陈旧
-     * prefs (apply 只写不清), 直接匹配系统语言, 避免按钮按旧 prefs 错标.
+     * Currently effective code: manual selection > system language match > English fallback.
+     * API 33+: read LocaleManager first — the user may have changed the app language via
+     * system settings, in which case prefs (written only inside apply()) is not yet synced,
+     * and reading prefs directly would mislabel the language button.
+     * When LocaleManager is empty (user cleared per-app language in system settings = follow
+     * system), skip stale prefs (apply only writes, never clears) and match the system
+     * language directly, so the button is not mislabeled by old prefs.
      */
     public static String current(Context ctx) {
         if (Build.VERSION.SDK_INT >= 33) {
@@ -61,7 +64,7 @@ public final class LocaleHelper {
                             if (code.equalsIgnoreCase(lang)) return code;
                         }
                     } else {
-                        // LM 可读且为空: 跟随系统, 跳过陈旧 prefs.
+                        // LM readable and empty: follow system, skip stale prefs.
                         return systemDefault();
                     }
                 }
@@ -72,7 +75,7 @@ public final class LocaleHelper {
         return systemDefault();
     }
 
-    /** 是否处于「跟随系统」状态 (无 per-app / 无手动选择). picker 据此标「跟随系统」项. */
+    /** Whether in "follow system" state (no per-app / no manual selection). The picker marks the "follow system" item accordingly. */
     public static boolean isFollowingSystem(Context ctx) {
         if (Build.VERSION.SDK_INT >= 33) {
             try {
@@ -96,8 +99,9 @@ public final class LocaleHelper {
     }
 
     /**
-     * attachBaseContext 调用. 仅当「用户手动选了语言」且「API 26-32」时才 wrap context;
-     * 其余情况(跟随系统 / API33+ 由 LocaleManager 管)直接返回 base, 让 Android 资源系统自动选.
+     * Called from attachBaseContext. Only wraps the context when "the user manually chose a
+     * language" AND "API 26-32"; otherwise (follow system / API 33+ managed by LocaleManager)
+     * returns base directly and lets the Android resource system pick automatically.
      */
     public static Context wrap(Context base) {
         String manual = getManual(base);
@@ -112,9 +116,9 @@ public final class LocaleHelper {
     }
 
     /**
-     * 切换语言: 写 SharedPreferences 持久化 + (API 33+) 设 LocaleManager.
-     * 调用方随后调 Activity.recreate() 使新 locale 生效 (API 33+ 由 LocaleManager 触发系统重建,
-     * 无需手动 recreate).
+     * Switch language: persist to SharedPreferences + (API 33+) set LocaleManager.
+     * The caller then calls Activity.recreate() to apply the new locale (on API 33+
+     * LocaleManager triggers a system recreation, so no manual recreate is needed).
      */
     public static void apply(Context ctx, String code) {
         prefs(ctx).edit().putString(KEY, code).apply();
@@ -130,9 +134,10 @@ public final class LocaleHelper {
     }
 
     /**
-     * 清除手动选择, 回到跟随系统语言: 删 prefs + (API 33+) 清 per-app locale.
-     * 调用方随后调 Activity.recreate() (API 26-32 需手动 recreate 使 attachBaseContext
-     * 走系统语言; API 33+ 由 LocaleManager 触发系统重建).
+     * Clear the manual selection and go back to following the system language: remove prefs +
+     * (API 33+) clear per-app locale.
+     * The caller then calls Activity.recreate() (API 26-32 needs a manual recreate so
+     * attachBaseContext follows the system language; API 33+ is handled by LocaleManager).
      */
     public static void clear(Context ctx) {
         prefs(ctx).edit().remove(KEY).apply();
@@ -148,19 +153,23 @@ public final class LocaleHelper {
     }
 
     public static Locale localeOf(String code) {
-        // zh 用 SIMPLIFIED_CHINESE 精确匹配 values-zh-rCN/values-zh; 其余 code 直接构造,
-        // 满足 spec Req4「加新语言零逻辑改动」(原硬编码 zh/en 二选一会把第三语言回落 English).
+        // zh uses SIMPLIFIED_CHINESE to match values-zh-rCN/values-zh exactly; other codes are
+        // constructed directly, satisfying spec Req4 "adding a new language requires zero logic
+        // changes" (the original hardcoded zh/en switch would fall a third language back to English).
         if ("zh".equals(code)) return Locale.SIMPLIFIED_CHINESE;
         return new Locale(code);
     }
 
     /**
-     * 运行中切语言时, ServerService 用此获取「当前应生效 locale」的 context (而非冻结的 this).
-     * 与 wrap() 区别: wrap 用于 attachBaseContext (进程启动, base 已是系统 locale, manual==null
-     * 返回 base 即可); resolveLocalizedContext 用于运行中 refresh, base (Activity) 可能仍是旧
-     * manual 的 locale, 故 manual==null (跟随系统) 时也需显式 createConfigurationContext(系统 locale),
-     * 否则 clear() 路径会拿到旧 locale 的 Activity context 重建出旧语言通知 (review 第三轮 finding).
-     * API 33+ 由 LocaleManager app 级接管, 直接返回 base.
+     * When switching language at runtime, ServerService uses this to get a context with the
+     * "currently effective locale" (instead of the frozen `this`).
+     * Difference from wrap(): wrap is for attachBaseContext (process start, base already carries
+     * the system locale, returning base when manual==null is fine); resolveLocalizedContext is
+     * for runtime refresh, where base (Activity) may still carry the old manual locale, so even
+     * when manual==null (follow system) an explicit createConfigurationContext(system locale)
+     * is required — otherwise the clear() path would rebuild notifications in the old language
+     * from a stale-locale Activity context (review round 3 finding).
+     * API 33+ is taken over app-wide by LocaleManager, so base is returned directly.
      */
     public static Context resolveLocalizedContext(Context base) {
         if (Build.VERSION.SDK_INT >= 33) return base;

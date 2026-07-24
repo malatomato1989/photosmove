@@ -50,9 +50,10 @@ type Album struct {
 	LatestTime int64    `json:"latest_time,omitempty"`
 	ThumbFiles      []string `json:"-"`
 	VideoThumbFiles []string `json:"-"`
-	// ThumbCount 暴露给前端: 该相册可加载的单图缩略图张数 (填满 dashboard
-	// thumb grid). 实际路径在 ThumbFiles (json:"-"), 前端按 0..ThumbCount-1
-	// 请求 /api/thumb/{idx}/{n}.
+	// ThumbCount is exposed to the front-end: the number of single-image
+	// thumbnails loadable for this album (to fill the dashboard thumb grid).
+	// The actual paths live in ThumbFiles (json:"-"); the front-end requests
+	// /api/thumb/{idx}/{n} for 0..ThumbCount-1.
 	ThumbCount int `json:"thumb_count,omitempty"`
 }
 
@@ -89,12 +90,15 @@ const BigFileThreshold int64 = 1 << 30 // 1024 * 1024 * 1024
 // Exported so the archiver shares one source of truth with the scanner.
 func IsBigFile(size int64) bool { return size > BigFileThreshold }
 
-// thumbSampleCount 是每个相册为 dashboard 缩略图网格采样的单图数量.
-// 配合前端 grid auto-fit 单排均分, 6 张足够填满一行且不换行.
+// thumbSampleCount is the number of single images sampled per album for the
+// dashboard thumbnail grid. With the front-end grid auto-fit equal-split row,
+// 6 images are enough to fill one row without wrapping.
 const thumbSampleCount = 6
 
-// sampleEvenly 从 paths 均匀间隔取样 n 张 (首尾必选, 中间等步长), 用于缩略图
-// 采样 — 比取前 N 张更能代表整个相册的时间跨度, 避免连拍/相邻照片扎堆重复.
+// sampleEvenly samples n paths at even intervals (first and last always
+// included, equal steps in between) for thumbnail sampling — more
+// representative of the album's full time span than taking the first N, and
+// avoids clustering duplicates from burst shots / adjacent photos.
 func sampleEvenly(paths []string, n int) []string {
 	if n <= 0 {
 		return nil
@@ -277,8 +281,10 @@ func buildAlbumsFromMediaDB(db *mediaStoreDB) []Album {
 				fp = filepath.Join(msa.Path, mf.RelPath)
 			}
 			ext := strings.ToLower(filepath.Ext(mf.RelPath))
-			// 收集全部图片路径, 循环外均匀间隔采样 → 缩略图代表不同时期,
-			// 避免连拍/相邻照片扎堆重复. 视频仍取前 8 (仅 videothumb 用).
+			// Collect all image paths, then sample at even intervals outside the
+			// loop → thumbnails represent different periods, avoiding clustering
+			// duplicates from burst shots / adjacent photos. Videos still take
+			// the first 8 (videothumb only).
 			if imageExtensions[ext] {
 				allImages = append(allImages, fp)
 			} else if videoExtensions[ext] && len(thumbVideos) < 8 {

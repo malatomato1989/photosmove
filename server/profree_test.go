@@ -322,8 +322,9 @@ func TestWriteBatchZip_FlatMode(t *testing.T) {
 	}
 }
 
-// TestWriteBatchZip_NormalMode 验证 Free 默认路径 (SmartRename=false,
-// FlatMode=false): safeZipName 保留原始目录结构, 文件名带 "/".
+// TestWriteBatchZip_NormalMode verifies the Free default path (SmartRename=false,
+// FlatMode=false): safeZipName preserves the original directory structure and
+// filenames contain "/".
 func TestWriteBatchZip_NormalMode(t *testing.T) {
 	tmpDir := t.TempDir()
 	f1 := filepath.Join(tmpDir, "IMG_001.jpg")
@@ -352,7 +353,7 @@ func TestWriteBatchZip_NormalMode(t *testing.T) {
 	if len(zr.File) != 1 {
 		t.Fatalf("expected 1 file, got %d", len(zr.File))
 	}
-	// Free 默认保留原始相对路径 (safeZipName 不剥目录分隔符).
+	// Free keeps original relative paths by default (safeZipName does not strip directory separators).
 	if !strings.Contains(zr.File[0].Name, "/") {
 		t.Errorf("normalMode ZIP should preserve paths, got %q", zr.File[0].Name)
 	}
@@ -436,7 +437,7 @@ func TestCalculateZipSizeMatchesActual(t *testing.T) {
 }
 
 // ============================================================
-// Handler tests: /api/albums (Free — 不再返回 pro_mode)
+// Handler tests: /api/albums (Free — no longer returns pro_mode)
 // ============================================================
 
 func newTestServer() *server {
@@ -448,8 +449,9 @@ func newTestServer() *server {
 	}
 }
 
-// TestHandleAlbums_NoProModeField 验证开源 Free 版 /api/albums 不再包含
-// pro_mode 字段 (Pro 机制已移除), 只返回 albums.
+// TestHandleAlbums_NoProModeField verifies the open-source Free build's
+// /api/albums no longer includes the pro_mode field (Pro mechanism removed);
+// it only returns albums.
 func TestHandleAlbums_NoProModeField(t *testing.T) {
 	s := newTestServer()
 	req := httptest.NewRequest("GET", "/api/albums", nil)
@@ -513,7 +515,7 @@ func TestHandleAlbums_VideoStats(t *testing.T) {
 }
 
 // ============================================================
-// handleSelect Free mode: since 恒为 0 + Plan D batches (含视频)
+// handleSelect Free mode: since is always 0 + Plan D batches (videos included)
 // ============================================================
 
 func TestHandleSelect_FreeModeIgnoresSince(t *testing.T) {
@@ -545,7 +547,7 @@ func TestHandleSelect_FreeModeIgnoresSince(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&resp)
 	fc := resp["file_count"].(float64)
 	// Plan D (T-big-3): Free includes videos per spec §5.2.
-	// Free 恒全量 (since 强制为 0), 即使客户端传 since 也会被忽略.
+	// Free is always full-set (since forced to 0); a client-supplied since is ignored.
 	if fc != 2 {
 		t.Errorf("file_count = %v, want 2 (jpg+mp4, Free includes videos, since ignored)", fc)
 	}
@@ -596,11 +598,12 @@ func TestHandleSelect_FreeModeKeepsBatchesPerAlbum(t *testing.T) {
 }
 
 // ============================================================
-// handleBatch Free mode: filename + 原始目录结构保留
+// handleBatch Free mode: filename + original directory structure preserved
 // ============================================================
 
-// TestHandleBatch_FreeModeFilename 验证 Free 下载文件名恒为 photos.zip,
-// 且 SmartRename=false 后 ZIP 内保留原始相对路径 (含 "/").
+// TestHandleBatch_FreeModeFilename verifies the Free download filename is
+// always photos.zip, and that with SmartRename=false the ZIP keeps original
+// relative paths (including "/").
 func TestHandleBatch_FreeModeFilename(t *testing.T) {
 	tmpDir := t.TempDir()
 	f1 := filepath.Join(tmpDir, "IMG.jpg")
@@ -630,7 +633,7 @@ func TestHandleBatch_FreeModeFilename(t *testing.T) {
 		t.Errorf("Content-Disposition = %q, should contain photos.zip", cd)
 	}
 
-	// Free 不再智能重命名 (SmartRename=false): safeZipName 保留原始目录结构.
+	// Free no longer smart-renames (SmartRename=false): safeZipName preserves the original directory structure.
 	body := w.Body.Bytes()
 	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
 	if err != nil {
@@ -687,12 +690,13 @@ func TestHandleBatch_ContentLengthAccurate(t *testing.T) {
 }
 
 // ============================================================
-// Range request — Free ZIP (不支持续传)
+// Range request — Free ZIP (resume not supported)
 // ============================================================
 
 func TestHandleBatch_RangeRequestFreeMode(t *testing.T) {
-	// single-zip-trust-tcp §1: 不支持 Range 续传. 即使客户端发 Range 头,
-	// 服务端必须返回完整 200 响应 (避免浏览器自动续传触发"幽灵新下载").
+	// single-zip-trust-tcp §1: Range resume is not supported. Even if the client
+	// sends a Range header, the server must return a full 200 response (to avoid
+	// the browser's auto-resume triggering a "ghost new download").
 	tmpDir := t.TempDir()
 	f1 := filepath.Join(tmpDir, "IMG.jpg")
 	os.WriteFile(f1, make([]byte, 5000), 0644)
@@ -714,16 +718,18 @@ func TestHandleBatch_RangeRequestFreeMode(t *testing.T) {
 	s.handleBatch(w, req)
 
 	if w.Code != 200 {
-		t.Errorf("Range request status = %d, want 200 (Range 不支持, 必须返回完整响应)", w.Code)
+		t.Errorf("Range request status = %d, want 200 (Range not supported, must return full response)", w.Code)
 	}
-	// single-zip-trust-tcp §1: 显式声明 Accept-Ranges: none, 明确告知浏览器
-	// 不支持续传, 阻止下载中断后用 Range 续传 → 服务端忽略 Range 返回 200 全量
-	// → 浏览器当新下载 ("下载完又重新开始"). 比留空更强地表达"不可续传".
+	// single-zip-trust-tcp §1: explicitly declare Accept-Ranges: none, clearly
+	// telling the browser that resume is unsupported, preventing a Range resume
+	// after an interrupted download → server ignores Range and returns 200 full
+	// → browser treats it as a new download ("finished then restarted"). Stronger
+	// than leaving it empty at expressing "not resumable".
 	if got := w.Header().Get("Accept-Ranges"); got != "none" {
-		t.Errorf("Accept-Ranges = %q, want \"none\" (显式禁止续传)", got)
+		t.Errorf("Accept-Ranges = %q, want \"none\" (explicitly forbid resume)", got)
 	}
 	if w.Body.Len() < 5000 {
-		t.Errorf("body length = %d, 应该 >= 5000 (完整 ZIP, 不是 Range 切片)", w.Body.Len())
+		t.Errorf("body length = %d, should be >= 5000 (full ZIP, not a Range slice)", w.Body.Len())
 	}
 }
 
@@ -753,7 +759,7 @@ func TestHandleSelect_FreeModeIncludesVideos(t *testing.T) {
 
 	var resp map[string]interface{}
 	json.NewDecoder(w.Body).Decode(&resp)
-	// spec §5.2 ("原视频字节级保留 4K/60fps") — Free includes videos.
+	// spec §5.2 ("original video preserved byte-for-byte, 4K/60fps") — Free includes videos.
 	if resp["file_count"].(float64) == 0 {
 		t.Errorf("video-only album in Free mode: file_count = %v, want ≥1 (spec §5.2 includes video)", resp["file_count"])
 	}
@@ -822,7 +828,7 @@ func TestWriteBatchZip_DataIntegrity(t *testing.T) {
 }
 
 // ============================================================
-// EXIF / GPS stripping (exifutil.go 保留为独立工具, Pro 调用点已删)
+// EXIF / GPS stripping (exifutil.go kept as a standalone tool, Pro call sites removed)
 // ============================================================
 
 func TestStripGpsFromJpeg_InvalidInput(t *testing.T) {
@@ -847,8 +853,9 @@ func TestStripGpsFromJpeg_NoExif(t *testing.T) {
 	}
 }
 
-// TestStripExifFromJpeg_AllCategories_NoCrash 验证多类别 EXIF 抹除在
-// 真实 JPEG (无 EXIF) 上不会 panic, 且原数据返回不变.
+// TestStripExifFromJpeg_AllCategories_NoCrash verifies multi-category EXIF
+// stripping does not panic on a real JPEG (without EXIF) and returns the
+// original data unchanged.
 func TestStripExifFromJpeg_AllCategories_NoCrash(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
 	var buf bytes.Buffer
@@ -865,7 +872,7 @@ func TestStripExifFromJpeg_AllCategories_NoCrash(t *testing.T) {
 	}
 }
 
-// TestStripExifFromJpeg_EmptyCategories 验证空类别列表是 no-op.
+// TestStripExifFromJpeg_EmptyCategories verifies an empty category list is a no-op.
 func TestStripExifFromJpeg_EmptyCategories(t *testing.T) {
 	original := []byte("fake jpeg data")
 	result, err := stripExifFromJpeg(original, nil)
@@ -877,7 +884,7 @@ func TestStripExifFromJpeg_EmptyCategories(t *testing.T) {
 	}
 }
 
-// TestStripExifFromJpeg_InvalidInput 验证非 JPEG 输入返回错误.
+// TestStripExifFromJpeg_InvalidInput verifies non-JPEG input returns an error.
 func TestStripExifFromJpeg_InvalidInput(t *testing.T) {
 	_, err := stripExifFromJpeg([]byte("not a jpeg"), []string{"gps"})
 	if err == nil {
@@ -905,8 +912,9 @@ func TestReadExifDateTime_FromMinimalJpeg(t *testing.T) {
 	}
 }
 
-// TestHandleBatch_FreeModeIgnoresStripGps 验证 Free 模式忽略 strip_gps 参数:
-// 文件字节原样写入 (Pro EXIF 抹除调用点已删除).
+// TestHandleBatch_FreeModeIgnoresStripGps verifies Free mode ignores the
+// strip_gps parameter: file bytes are written as-is (Pro EXIF stripping call
+// sites removed).
 func TestHandleBatch_FreeModeIgnoresStripGps(t *testing.T) {
 	tmpDir := t.TempDir()
 	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
@@ -939,7 +947,7 @@ func TestHandleBatch_FreeModeIgnoresStripGps(t *testing.T) {
 		t.Fatalf("zip parse: %v", err)
 	}
 
-	// 找到非 manifest 的用户文件条目.
+	// Find the non-manifest user file entry.
 	var rc io.ReadCloser
 	for _, f := range zr.File {
 		if f.Name != "manifest.json" {

@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  zh (language-only) 兜底: 覆盖 zh-TW / zh-HK 等繁体系统, 避免回退到默认 values/ (英文).
-  values-zh-rCN 仍为 zh-CN 系统的精确匹配 (Android 优先选更具体的 -rCN); 此文件承接所有其他
-  zh 变体, 统一显示简体中文 (review 第三轮 finding: 旧实现 zh-TW 系统按钮标「中文」但 UI 英文).
-  内容与 values-zh-rCN/strings.xml 保持一致 (由 check-parity.js 校验).
+  zh (language-only) fallback: covers Traditional-Chinese systems like zh-TW / zh-HK,
+  avoiding fallback to default values/ (English).
+  values-zh-rCN remains the exact match for zh-CN systems (Android prefers the more
+  specific -rCN); this file catches all other zh variants and shows Simplified Chinese
+  (review round 3 finding: previously a zh-TW system showed the "中文" button but English UI).
+  Content stays in sync with values-zh-rCN/strings.xml (enforced by check-parity.js).
 -->
 <resources>
     <string name="app_name">PhotosMove</string>
@@ -16,7 +18,7 @@
     <string name="status_stopped">服务已停止</string>
     <string name="status_error">服务异常</string>
     <string name="notif_service_running">照片传输服务运行中</string>
-    <!-- D7: channel name 语言无关品牌名(NotificationChannel 创建后 name 不随语言刷新) -->
+    <!-- D7: channel name is a language-independent brand name (NotificationChannel name does not refresh with language after creation) -->
     <string name="notif_channel_name">PhotosMove</string>
     <string name="notif_transferring">传输中 %1$d%% · %2$s/%3$s</string>
     <string name="notif_done">传输完成 · %1$s</string>
@@ -42,7 +44,7 @@
     <string name="btn_copy_done">已复制</string>
     <string name="btn_grant_permission">授予存储权限</string>
 
-    <!-- Privacy (Play 合规: 应用内隐私政策入口, 点击用系统浏览器打开) -->
+    <!-- Privacy (Play compliance: in-app privacy policy entry, opens in system browser on tap) -->
     <string name="privacy_policy">隐私政策</string>
     <string name="privacy_policy_url">https://github.com/malatomato1989/photosmove/blob/main/docs/privacy.md</string>
     <string name="no_browser">未找到可打开链接的浏览器</string>

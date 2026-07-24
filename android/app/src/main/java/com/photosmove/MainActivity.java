@@ -190,7 +190,7 @@ public class MainActivity extends Activity {
         TextView versionText = findViewById(R.id.version_text);
         versionText.setText("v" + ServerService.VERSION);
 
-        // Language switcher (组5.2): 显示当前语言, 点击弹列表选择
+        // Language switcher (group 5.2): shows the current language; tapping opens a picker list
         TextView langBtn = findViewById(R.id.lang_btn);
         updateLangBtn(langBtn);
         langBtn.setOnClickListener(v -> showLangPicker());
@@ -206,7 +206,7 @@ public class MainActivity extends Activity {
 
         permBtn.setOnClickListener(v -> requestStoragePermission());
 
-        // 隐私政策入口: 点击用系统浏览器打开 (Play 合规: 应用内可访问)
+        // Privacy policy entry: tap to open in the system browser (Play compliance: accessible in-app)
         findViewById(R.id.privacy_link).setOnClickListener(v -> {
             try {
                 startActivity(new Intent(Intent.ACTION_VIEW,
@@ -317,7 +317,7 @@ public class MainActivity extends Activity {
         boolean followingSystem = LocaleHelper.isFollowingSystem(this);
         String current = LocaleHelper.current(this);
 
-        // 列表 = 支持语言 + 「跟随系统」(清 per-app, 跟随系统语言).
+        // List = supported languages + "follow system" (clears per-app, follows system language).
         java.util.List<String> codes = new ArrayList<>(LocaleHelper.LANGUAGES.keySet());
         java.util.List<String> labels = new ArrayList<>(LocaleHelper.LANGUAGES.values());
         codes.add("system");

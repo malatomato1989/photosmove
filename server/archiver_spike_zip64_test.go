@@ -1,16 +1,16 @@
-// S-1 Spike: ZIP64 真机验证 (本地可执行版)
+// S-1 Spike: ZIP64 on-device verification (locally runnable version)
 //
-// 来源: openspec/changes/big-video-no-split/spikes/zip64-spike-draft_test.go
-// 目标: 验证 Go archive/zip 在三种场景下需要/不需要显式启用 ZIP64
+// Source: openspec/changes/big-video-no-split/spikes/zip64-spike-draft_test.go
+// Goal: verify whether Go archive/zip needs explicit ZIP64 enabling in three scenarios
 //
-// 跑法:
-//   go test -run TestSpikeZip64 -v -timeout 600s          # 全部 (需 11GB 磁盘)
-//   go test -run TestSpikeZip64 -v -short -timeout 60s    # 只跑文件数场景
+// How to run:
+//   go test -run TestSpikeZip64 -v -timeout 600s          # all (needs 11GB disk)
+//   go test -run TestSpikeZip64 -v -short -timeout 60s    # file-count scenario only
 //
-// 三场景:
-//   1. 单文件 > 4GB          (DJI 4K 5GB)         - 需 5GB 磁盘
-//   2. 累计 > 4GB            (6 × 1GB 视频)        - 需 6GB 磁盘
-//   3. 文件数 > 65535        (70000 张小照片)      - 需 ~100MB, 慢
+// Three scenarios:
+//   1. single file > 4GB     (DJI 4K 5GB)         - needs 5GB disk
+//   2. accumulated > 4GB     (6 × 1GB videos)     - needs 6GB disk
+//   3. file count > 65535    (70000 small photos) - needs ~100MB, slow
 
 package main
 
@@ -22,13 +22,16 @@ import (
 	"testing"
 )
 
-// zip32SizeSentinel 是 ZIP32 size 字段哨兵值, 触发解压器读取 ZIP64 extra field
+// zip32SizeSentinel is the ZIP32 size field sentinel value, triggering the
+// extractor to read the ZIP64 extra field
 const zip32SizeSentinel = 0xFFFFFFFF
 
-// createHeaderZip64 是 photosmove 改造后 writeFileToZip 的核心片段 (S-1 Spike 验证目标)
+// createHeaderZip64 is the core snippet of photosmove's modified writeFileToZip
+// (the S-1 Spike verification target)
 //
-// 关键: 预填 UncompressedSize64, 超 4GB 时把 32 位 size 设哨兵.
-// 验证: Go 是否自动加 ZIP64 extra field (Local Header + Central Directory).
+// Key: pre-fill UncompressedSize64; set the 32-bit size to the sentinel when
+// over 4GB. Verify: whether Go automatically adds the ZIP64 extra field
+// (Local Header + Central Directory).
 func createHeaderZip64(zw *zip.Writer, name string, size int64) (io.Writer, error) {
 	hdr := &zip.FileHeader{
 		Name:   name,
@@ -44,11 +47,11 @@ func createHeaderZip64(zw *zip.Writer, name string, size int64) (io.Writer, erro
 	return zw.CreateHeader(hdr)
 }
 
-// TestSpikeZip64_SingleFileOver4GB 场景 1: 单文件 5GB
-// 验证 ZIP Local Header + Central Directory 都含 ZIP64 extra field
+// TestSpikeZip64_SingleFileOver4GB scenario 1: single 5GB file
+// Verifies both ZIP Local Header + Central Directory carry the ZIP64 extra field
 func TestSpikeZip64_SingleFileOver4GB(t *testing.T) {
 	if testing.Short() {
-		t.Skip("需要 5GB 临时磁盘空间, skip in -short")
+		t.Skip("needs 5GB temp disk space, skip in -short")
 	}
 
 	tmp := t.TempDir()
@@ -79,7 +82,7 @@ func TestSpikeZip64_SingleFileOver4GB(t *testing.T) {
 
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
-		t.Fatalf("OpenReader (ZIP64 解码失败说明 Go 没自动启用): %v", err)
+		t.Fatalf("OpenReader (ZIP64 decode failure means Go did not auto-enable it): %v", err)
 	}
 	defer zr.Close()
 
@@ -88,7 +91,7 @@ func TestSpikeZip64_SingleFileOver4GB(t *testing.T) {
 	}
 	entry := zr.File[0]
 	if entry.UncompressedSize64 != uint64(fileSize) {
-		t.Errorf("UncompressedSize64 = %d, want %d (说明 64 位 size 没传对)",
+		t.Errorf("UncompressedSize64 = %d, want %d (means the 64-bit size was not passed correctly)",
 			entry.UncompressedSize64, fileSize)
 	}
 
@@ -102,16 +105,16 @@ func TestSpikeZip64_SingleFileOver4GB(t *testing.T) {
 		t.Fatalf("read back: %v", err)
 	}
 	if n != fileSize {
-		t.Errorf("read back bytes = %d, want %d (数据错位 = ZIP32 溢出)", n, fileSize)
+		t.Errorf("read back bytes = %d, want %d (data misalignment = ZIP32 overflow)", n, fileSize)
 	}
-	t.Logf("S-1 场景 1 PASS: 5GB 单文件 ZIP64 正确启用, read back %d bytes", n)
+	t.Logf("S-1 scenario 1 PASS: 5GB single file ZIP64 correctly enabled, read back %d bytes", n)
 }
 
-// TestSpikeZip64_AccumulatedOver4GB 场景 2: 累计 6 × 1GB = 6GB
-// 验证 Central Directory ZIP64 启用 (offset > uint32max)
+// TestSpikeZip64_AccumulatedOver4GB scenario 2: accumulated 6 × 1GB = 6GB
+// Verifies Central Directory ZIP64 is enabled (offset > uint32max)
 func TestSpikeZip64_AccumulatedOver4GB(t *testing.T) {
 	if testing.Short() {
-		t.Skip("需要 6GB 临时磁盘空间, skip in -short")
+		t.Skip("needs 6GB temp disk space, skip in -short")
 	}
 
 	tmp := t.TempDir()
@@ -150,15 +153,15 @@ func TestSpikeZip64_AccumulatedOver4GB(t *testing.T) {
 	if len(zr.File) != fileCount {
 		t.Fatalf("expect %d entries, got %d", fileCount, len(zr.File))
 	}
-	t.Logf("S-1 场景 2 PASS: 6GB 累计 ZIP64 中央目录正确启用, %d entries", len(zr.File))
+	t.Logf("S-1 scenario 2 PASS: 6GB accumulated ZIP64 central directory correctly enabled, %d entries", len(zr.File))
 }
 
-// TestSpikeZip64_FileCountOver65535 场景 3: 70000 个 1KB 文件
-// 验证 Central Directory ZIP64 启用 (count > uint16max)
-// 不需要大磁盘, 但创建 70000 entries 较慢
+// TestSpikeZip64_FileCountOver65535 scenario 3: 70000 1KB files
+// Verifies Central Directory ZIP64 is enabled (count > uint16max)
+// Does not need a large disk, but creating 70000 entries is slow
 func TestSpikeZip64_FileCountOver65535(t *testing.T) {
 	if testing.Short() {
-		t.Skip("创建 70000 entries 较慢, skip in -short")
+		t.Skip("creating 70000 entries is slow, skip in -short")
 	}
 
 	tmp := t.TempDir()
@@ -172,7 +175,7 @@ func TestSpikeZip64_FileCountOver65535(t *testing.T) {
 	zw := zip.NewWriter(fw)
 
 	for i := 0; i < fileCount; i++ {
-		// 生成不重复的文件名 (避免重名)
+		// Generate non-duplicate filenames (avoid name collisions)
 		name := "img_" + spikeItoa(i) + ".jpg"
 		w, err := createHeaderZip64(zw, name, 1024)
 		if err != nil {
@@ -183,7 +186,7 @@ func TestSpikeZip64_FileCountOver65535(t *testing.T) {
 		}
 	}
 	if err := zw.Close(); err != nil {
-		t.Fatalf("Close: %v (若失败说明中央目录 ZIP64 未启用)", err)
+		t.Fatalf("Close: %v (if this fails, central directory ZIP64 was not enabled)", err)
 	}
 	if err := fw.Close(); err != nil {
 		t.Fatalf("file Close: %v", err)
@@ -191,20 +194,21 @@ func TestSpikeZip64_FileCountOver65535(t *testing.T) {
 
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
-		t.Fatalf("OpenReader (中央目录 ZIP64 解码失败): %v", err)
+		t.Fatalf("OpenReader (central directory ZIP64 decode failure): %v", err)
 	}
 	defer zr.Close()
 	if len(zr.File) != fileCount {
 		t.Errorf("entry count = %d, want %d", len(zr.File), fileCount)
 	}
-	t.Logf("S-1 场景 3 PASS: %d 文件 ZIP64 中央目录正确启用", len(zr.File))
+	t.Logf("S-1 scenario 3 PASS: %d files, ZIP64 central directory correctly enabled", len(zr.File))
 }
 
-// TestSpikeZip64_ControlGroup 对照组: 用默认 Create(name) 不预填 size
-// 验证不显式启用 ZIP64 时 Go 默认行为 (应该失败或数据错位)
+// TestSpikeZip64_ControlGroup control group: use default Create(name) without
+// pre-filling size. Verifies Go's default behavior without explicit ZIP64
+// (should fail or misalign data)
 func TestSpikeZip64_ControlGroup(t *testing.T) {
 	if testing.Short() {
-		t.Skip("对照组需要 5GB, skip in -short")
+		t.Skip("control group needs 5GB, skip in -short")
 	}
 
 	tmp := t.TempDir()
@@ -217,48 +221,50 @@ func TestSpikeZip64_ControlGroup(t *testing.T) {
 	}
 	zw := zip.NewWriter(fw)
 
-	// 对照组: 默认 Create, 不预填 64 位 size
+	// Control group: default Create, no pre-filled 64-bit size
 	w, err := zw.Create("control.mp4")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// 写 5GB (Go 内部会在 Close 时计算 size, 但流式场景可能出错)
+	// Write 5GB (Go computes size internally on Close, but streaming scenarios may fail)
 	if _, err := io.Copy(w, newSpikeZeroReader(fileSize)); err != nil {
-		t.Logf("对照组预期失败 (Create 模式不支持大文件): %v", err)
+		t.Logf("control group failed as expected (Create mode does not support large files): %v", err)
 		return
 	}
 
 	if err := zw.Close(); err != nil {
-		t.Logf("对照组 Close 失败 (预期): %v", err)
+		t.Logf("control group Close failed (expected): %v", err)
 		return
 	}
 	fw.Close()
 
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
-		t.Logf("对照组 OpenReader 失败 (预期, ZIP32 溢出): %v", err)
+		t.Logf("control group OpenReader failed (expected, ZIP32 overflow): %v", err)
 		return
 	}
 	defer zr.Close()
 
 	entry := zr.File[0]
-	t.Logf("对照组 entry.UncompressedSize64 = %d (实际 5GB = %d), 一致=%v",
+	t.Logf("control group entry.UncompressedSize64 = %d (actual 5GB = %d), match=%v",
 		entry.UncompressedSize64, fileSize, entry.UncompressedSize64 == uint64(fileSize))
 
 	if entry.UncompressedSize64 != uint64(fileSize) {
-		t.Logf("对照组预期错位: Go 默认 Create 模式下 5GB 文件 size 不正确, 证明 createHeaderZip64 改造必要")
+		t.Logf("control group misaligned as expected: Go default Create mode gives wrong size for a 5GB file, proving the createHeaderZip64 change is necessary")
 	}
 }
 
-// TestSpikeZip64_NonSeekableWriter 关键场景: 模拟 HTTP ResponseWriter (non-seekable)
-// photosmove 真实场景: zip.Writer 底层是 http.ResponseWriter, 不能 Seek
-// 验证: non-seekable writer 下 Go 是否仍自动启用 ZIP64
+// TestSpikeZip64_NonSeekableWriter key scenario: simulate an HTTP ResponseWriter
+// (non-seekable). photosmove's real scenario: zip.Writer sits on top of
+// http.ResponseWriter, which cannot Seek.
+// Verify: whether Go still auto-enables ZIP64 on a non-seekable writer.
 //
-// 这个测试是 S-1 Spike 的"真正"验证 (前 4 个用 os.File Seeker 走 seek-and-update 路径)
+// This test is the "real" verification of the S-1 Spike (the first 4 use
+// os.File Seeker and go through the seek-and-update path)
 func TestSpikeZip64_NonSeekableWriter(t *testing.T) {
 	if testing.Short() {
-		t.Skip("non-seekable 5GB 测试, skip in -short")
+		t.Skip("non-seekable 5GB test, skip in -short")
 	}
 
 	tmp := t.TempDir()
@@ -269,12 +275,12 @@ func TestSpikeZip64_NonSeekableWriter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	// 包装为 non-seekable writer, 模拟 http.ResponseWriter
+	// Wrap as a non-seekable writer to simulate http.ResponseWriter
 	nw := newNonSeekableWriter(fw)
 
 	zw := zip.NewWriter(nw)
 
-	// 不预填 size (对照组: 模拟 photosmove 现状)
+	// No pre-filled size (control group: simulating photosmove's current state)
 	w, err := zw.Create("non_seekable.mp4")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -284,7 +290,7 @@ func TestSpikeZip64_NonSeekableWriter(t *testing.T) {
 	}
 
 	if err := zw.Close(); err != nil {
-		t.Fatalf("Close: %v (若失败说明 non-seekable 模式不支持大文件)", err)
+		t.Fatalf("Close: %v (if this fails, non-seekable mode does not support large files)", err)
 	}
 	if err := fw.Close(); err != nil {
 		t.Fatalf("file Close: %v", err)
@@ -292,7 +298,7 @@ func TestSpikeZip64_NonSeekableWriter(t *testing.T) {
 
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
-		t.Fatalf("OpenReader (non-seekable ZIP64 解码失败): %v", err)
+		t.Fatalf("OpenReader (non-seekable ZIP64 decode failure): %v", err)
 	}
 	defer zr.Close()
 
@@ -313,11 +319,12 @@ func TestSpikeZip64_NonSeekableWriter(t *testing.T) {
 	if n != fileSize {
 		t.Errorf("read back = %d, want %d", n, fileSize)
 	}
-	t.Logf("S-1 non-seekable PASS: Go 在 non-seekable writer 下仍自动启用 ZIP64, read back %d bytes", n)
-	t.Logf("  → 说明 photosmove 无需显式预填 UncompressedSize64, Go 自动 data descriptor + ZIP64")
+	t.Logf("S-1 non-seekable PASS: Go still auto-enables ZIP64 on a non-seekable writer, read back %d bytes", n)
+	t.Logf("  → meaning photosmove does not need to explicitly pre-fill UncompressedSize64; Go handles data descriptor + ZIP64 automatically")
 }
 
-// nonSeekableWriter 包装 io.Writer, 屏蔽 Seek 方法, 模拟 http.ResponseWriter
+// nonSeekableWriter wraps an io.Writer, hiding the Seek method to simulate
+// http.ResponseWriter
 type nonSeekableWriter struct {
 	w io.Writer
 }
@@ -328,7 +335,7 @@ func newNonSeekableWriter(w io.Writer) *nonSeekableWriter {
 
 func (n *nonSeekableWriter) Write(p []byte) (int, error) { return n.w.Write(p) }
 
-// spikeZeroReader 流式产生 N 字节零数据, 不占内存
+// spikeZeroReader streams N zero bytes without consuming memory
 type spikeZeroReader struct{ remaining int64 }
 
 func newSpikeZeroReader(n int64) *spikeZeroReader { return &spikeZeroReader{remaining: n} }
@@ -348,7 +355,7 @@ func (z *spikeZeroReader) Read(p []byte) (int, error) {
 	return int(give), nil
 }
 
-// spikeItoa 简化版 itoa, 避免引入 strconv (减少依赖演示)
+// spikeItoa is a simplified itoa, avoiding the strconv import (fewer deps for the demo)
 func spikeItoa(n int) string {
 	if n == 0 {
 		return "0"

@@ -1,16 +1,16 @@
-// PhotosMove i18n core (design D4). 零依赖纯 JS.
-// 暴露 window.I18N = { SUPPORTED, getLocale, setLocale, t, te, applyToDOM, currentLabel }
-//   getLocale()  : localStorage > navigator.language(降级匹配 en-US→en) > 'en'
-//   t(key,params): ui 命名空间查找 + {param} 插值; 缺 key 返回 key 本身
-//   te(code,parm): errors 命名空间(服务端 error code)查找; 未知 code 原样返回(spec Req5 兜底)
-//   applyToDOM() : [data-i18n]→textContent, [data-i18n-html]→innerHTML (HTML 文案保留标签, spec Req6)
-//   setLocale()  : 写 localStorage + applyToDOM + 更新 <html lang>
-// 加新语言 = locales/xx.js + SUPPORTED 加一项, 零逻辑改动 (spec Req4)
+// PhotosMove i18n core (design D4). Zero-dependency plain JS.
+// Exposes window.I18N = { SUPPORTED, getLocale, setLocale, t, te, applyToDOM, currentLabel }
+//   getLocale()  : localStorage > navigator.language (fallback match en-US→en) > 'en'
+//   t(key,params): ui namespace lookup + {param} interpolation; missing key returns the key itself
+//   te(code,parm): errors namespace (server error code) lookup; unknown code returned as-is (spec Req5 fallback)
+//   applyToDOM() : [data-i18n]→textContent, [data-i18n-html]→innerHTML (HTML copy keeps its tags, spec Req6)
+//   setLocale()  : writes localStorage + applyToDOM + updates <html lang>
+// Adding a language = locales/xx.js + one SUPPORTED entry, zero logic changes (spec Req4)
 (function () {
     'use strict';
 
     var STORAGE_KEY = 'photosmove_locale';
-    var SUPPORTED = ['zh', 'en'];          // 加语言在此声明性新增 (spec Req4)
+    var SUPPORTED = ['zh', 'en'];          // add languages declaratively here (spec Req4)
     var DEFAULT = 'en';
 
     function tables() { return window.PHOTOSMOVE_I18N || {}; }
@@ -41,7 +41,8 @@
     function setLocale(lang) {
         if (SUPPORTED.indexOf(lang) < 0) return;
         try { localStorage.setItem(STORAGE_KEY, lang); } catch (e) {}
-        // 直接用 code 作 <html lang>, 不硬编码 zh/en 三元 —— 满足 spec Req4「加新语言零逻辑改动」.
+        // Use the code directly as <html lang> instead of a hardcoded zh/en ternary —
+        // satisfies spec Req4 "add a language with zero logic changes".
         document.documentElement.lang = lang;
         applyToDOM();
     }
@@ -53,13 +54,13 @@
         });
     }
 
-    // UI 文案
+    // UI copy
     function t(key, params) {
         var s = uiOf(getLocale())[key];
         return (s === undefined) ? key : interpolate(s, params);
     }
 
-    // 服务端 error code 翻译; 未知 code 原样返回不崩溃 (spec Req5)
+    // Server error-code translation; unknown codes returned as-is without crashing (spec Req5)
     function te(code, params) {
         var s = errOf(getLocale())[code];
         return (s === undefined) ? code : interpolate(s, params);
@@ -67,8 +68,9 @@
 
     function applyToDOM() {
         var loc = getLocale();
-        // 同步 <html lang>: 初始加载 (只调 applyToDOM 不调 setLocale) 时也修正, 避免
-        // index.html 硬编码 zh-CN 与实际渲染语言不符 (影响屏幕阅读器/翻译提示).
+        // Sync <html lang>: also fixed on initial load (where only applyToDOM runs, not
+        // setLocale), so index.html's hardcoded zh-CN never mismatches the actual rendered
+        // language (affects screen readers / translation prompts).
         document.documentElement.lang = loc;
         var u = uiOf(loc);
         var i, el, v;
@@ -86,7 +88,8 @@
         }
     }
 
-    // 语言入口按钮显示当前语言 (D6: 显示当前语言代码 EN/中文)
+    // Language entry button shows the current language (D6: shows the current language
+    // code, EN or the zh label)
     function currentLabel() {
         return getLocale() === 'zh' ? '中文' : 'EN';
     }

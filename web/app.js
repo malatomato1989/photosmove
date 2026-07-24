@@ -1,4 +1,4 @@
-// PhotosMove browser client — camera download (i18n: 所有文案经 I18N.t, 组3.3-3.5/5.4/4.3)
+// PhotosMove browser client — camera download (i18n: all copy via I18N.t, group 3.3-3.5/5.4/4.3)
 (function () {
     'use strict';
 
@@ -29,7 +29,7 @@
     const dashboardView = document.getElementById('dashboard-view');
     const connectForm = document.getElementById('connect-form');
     const pinInput = document.getElementById('pin-input');
-    // 进入 PIN 页自动聚焦输入框(免用户手动点)
+    // Auto-focus the PIN input when entering the PIN page (saves the user a tap)
     if (connectView && !connectView.classList.contains('hidden')) { setTimeout(() => pinInput.focus(), 50); }
     const connectError = document.getElementById('connect-error');
     const cardTitle = document.getElementById('card-title');
@@ -46,19 +46,21 @@
     const consoleToggle = document.getElementById('console-toggle');
     const consoleBox = document.getElementById('console-box');
 
-    // --- i18n init (组3.5/5.4): 应用静态文案 + 绑定语言切换入口 ---
-    // 守卫: i18n.js 加载失败时 I18N 未定义, 不能让 app.js 在 IIFE 顶部崩溃 ——
-    // 否则末尾的 window.error 兜底 (showFatalError) 也用 I18N.t 二次崩溃 → 白屏无错误.
-    // 用不依赖 I18N 的原生提示兜底, 至少给用户一行可读信息.
+    // --- i18n init (group 3.5/5.4): apply static copy + bind the language switch entry ---
+    // Guard: if i18n.js fails to load, I18N is undefined — app.js must not crash at the top
+    // of the IIFE, or the trailing window.error fallback (showFatalError) would also crash on
+    // I18N.t → white screen with no error. Fall back to a native prompt that doesn't depend
+    // on I18N, so the user at least gets one readable line.
     if (typeof I18N === 'undefined') {
         document.body.innerHTML = '<div style="padding:40px;font-family:system-ui,sans-serif;color:#991b1b;text-align:center">PhotosMove failed to load (i18n). Please reload the page.</div>';
         return;
     }
     I18N.applyToDOM();
     refreshLangLabels();
-    // card-desc / progress-downloaded 由 app.js 动态管理: 切语言时 applyToDOM 不能覆盖它们
-    // (否则进度跌回 "0 B / 0 B"). 故 index.html 上不带 data-i18n, 初始文案由这里显式设一次,
-    // 之后 updateCard / applyProgress 接管.
+    // card-desc / progress-downloaded are managed dynamically by app.js: applyToDOM must
+    // not overwrite them on locale change (otherwise progress falls back to "0 B / 0 B").
+    // So index.html carries no data-i18n on them; the initial copy is set explicitly here
+    // once, then updateCard / applyProgress take over.
     cardDesc.textContent = I18N.t('card_desc_loading');
     progressDownloaded.textContent = I18N.t('progress_init');
     document.querySelectorAll('[data-lang-switch]').forEach(function (el) {
@@ -96,11 +98,13 @@
         mask.addEventListener('click', function (e) { if (e.target === mask) mask.parentNode.removeChild(mask); });
     }
 
-    // 语言切换后重渲染动态文案. 严格保留 downloading 状态 (design Risks ④⑤:
-    // 不重启下载/不清进度). applyToDOM 只刷新带 data-i18n 的静态元素; 下载中及刚完成/
-    // 中断态动态管理的元素 (card-desc/progressAlbum/progressSpeed/progressEta/
-    // progressDownloaded/大文件块) 均无 data-i18n, 必须按当前状态机统一重渲, 否则残留
-    // 旧语言 —— 尤其 success/interrupted 态无 poll 刷新, 会永久冻结 (review finding).
+    // Re-render dynamic copy after a locale change. Strictly preserve the downloading
+    // state (design Risks ④⑤: do not restart the download / do not clear progress).
+    // applyToDOM only refreshes static elements with data-i18n; dynamically managed
+    // elements (card-desc/progressAlbum/progressSpeed/progressEta/progressDownloaded/
+    // big-file block) have no data-i18n and must be re-rendered uniformly from the current
+    // state machine, or stale language remains — especially the success/interrupted states,
+    // which get no poll refresh and would freeze permanently (review finding).
     function refreshProgressText() {
         if (dlState.mode === 'init') {
             progressDownloaded.textContent = I18N.t('progress_init');
@@ -128,8 +132,9 @@
     }
 
     function refreshDynamicText() {
-        // card-desc (无 data-i18n, updateCard 管理): 必须与 updateCard 的全部分支一致,
-        // 否则切语言后空状态/无相机相册态会被覆盖成 loading (review 第三轮 finding).
+        // card-desc (no data-i18n, managed by updateCard): must match every branch of
+        // updateCard, or after a locale change the empty/no-camera-album states would be
+        // overwritten with loading (review round-3 finding).
         if (!cachedAlbums || cachedAlbums.length === 0) {
             cardDesc.textContent = I18N.t('no_photos');
         } else {
@@ -143,9 +148,10 @@
             }
         }
 
-        // 按钮: 与 updateCard 一致 — downloading→cancel, complete→redownload,
-        // 无相册/无相机相册→nothing_to_download, 否则→download_all.
-        // 不调 updateCard —— 否则 success 态会把 redownload 覆盖回 download_all.
+        // Button: consistent with updateCard — downloading→cancel, complete→redownload,
+        // no albums/no camera albums→nothing_to_download, otherwise→download_all.
+        // Do not call updateCard — in the success state it would overwrite redownload
+        // back to download_all.
         if (downloading) {
             btnDownload.textContent = I18N.t('cancel_transfer');
         } else if (dlState.mode === 'complete') {
@@ -162,16 +168,18 @@
             }
         }
 
-        // 进度区动态元素 (无 data-i18n): 仅在进度区可见时重渲 (覆盖 downloading/success/interrupted).
+        // Dynamic elements in the progress section (no data-i18n): re-render only while
+        // the progress section is visible (covers downloading/success/interrupted).
         if (!progressSection.classList.contains('hidden')) {
             if (activeAlbumMeta) progressAlbum.textContent = I18N.t(activeAlbumMeta.key, activeAlbumMeta.params);
             refreshProgressText();
         }
 
-        // 大文件块 (无 data-i18n, 可能停留数十分钟).
+        // Big-file block (no data-i18n, may stay on screen for tens of minutes).
         if (activeBigFileBatch) renderBigFileBatch(activeBigFileBatch);
 
-        // verify.js 动态元素 (无 data-i18n, 独立 IIFE): 暴露 rerender 钩子时调用.
+        // verify.js dynamic elements (no data-i18n, separate IIFE): call when the
+        // rerender hook is exposed.
         if (window.photosmoveVerify && typeof window.photosmoveVerify.rerender === 'function') {
             window.photosmoveVerify.rerender();
         }
@@ -199,7 +207,7 @@
                 body: JSON.stringify({ pin }),
             });
             if (!res.ok) {
-                // 4.3 ①: 服务端 error code 契约 → I18N.te(code), 未知 code 原样返回
+                // 4.3 ①: server error-code contract → I18N.te(code); unknown codes pass through
                 let errMsg = I18N.t('err_server_status', { status: res.status });
                 try { const d = await res.json(); if (d.code) errMsg = I18N.te(d.code, { detail: d.detail }); else if (d.error) errMsg = d.error; } catch (e) {}
                 throw new Error(errMsg);
@@ -208,7 +216,8 @@
             saveToken(data.token);
             showDashboard();
         } catch (err) {
-            // 4.3 ③: fetch 网络层失败 (TypeError, 无响应体如 Failed to fetch) → 本地化文案
+            // 4.3 ③: fetch network-layer failure (TypeError, no response body, e.g. Failed
+            // to fetch) → localized copy
             const isNetworkErr = err instanceof TypeError;
             const displayMsg = isNetworkErr ? I18N.t('network_error') : (err.message || I18N.t('err_default'));
             const hint = isNetworkErr ? '<div class="err-hint">' + I18N.t('err_network_hint') + '</div>' : '';
@@ -229,7 +238,7 @@
             });
             const copyBtn = document.getElementById('err-copy');
             if (copyBtn) copyBtn.addEventListener('click', () => {
-                // 诊断 dump 保持技术英文 (供反馈/排错), 不翻译
+                // Keep the diagnostic dump in technical English (for feedback/debugging); do not translate
                 const txt = `PhotosMove connect failed\nURL: ${authUrl}\nPIN: ${pin}\nError: ${err.message}\nUA: ${navigator.userAgent}\nTime: ${new Date().toISOString()}`;
                 navigator.clipboard?.writeText(txt).then(() => {
                     copyBtn.textContent = I18N.t('err_copied');
@@ -291,17 +300,19 @@
         cardTitle.textContent = I18N.t('card_title');
 
         // Free/Pro unified per spec §5.2 — both include videos, so the card
-        // always shows total file count + size and a single "下载全部" button.
+        // always shows total file count + size and a single "Download all" button.
         cardDesc.innerHTML = I18N.t('card_files_html', { count: totalFiles.toLocaleString(), size: formatSize(totalSize) });
         btnDownload.textContent = I18N.t('download_all', { size: formatSize(totalSize) });
 
-        // verify.js 免费信任工具: verify-panel 仅在用户点 [校验] 提交 ZIP 后才展开.
+        // verify.js free trust tool: the verify panel only expands after the user clicks
+        // [Verify] and submits a ZIP.
         btnDownload.disabled = false;
 
-        // 缩略图行: 遍历所有 camera 相册, 每个相册加载其内多张单图缩略图.
+        // Thumbnail row: walk all camera albums, loading multiple single-image thumbnails
+        // from each.
         if (thumbRow) {
             thumbRow.innerHTML = '';
-            const MAX_THUMBS = 4; // 用户反馈: 6 张偏多, 4 张足够
+            const MAX_THUMBS = 4; // user feedback: 6 was too many, 4 is enough
             let placed = 0;
             for (const a of cameraAlbums) {
                 if (placed >= MAX_THUMBS) break;
@@ -327,18 +338,22 @@
     let dlGeneration = 0;
     let currentBatchId = null;
     let dlSpeedSamples = [];
-    // 切语言时重渲染动态块用: 大文件块 / 当前相册标题 (二者无 data-i18n, 不补渲染残留旧语言).
+    // For re-rendering dynamic blocks on locale change: the big-file block / current album
+    // title (neither has data-i18n; without re-rendering, stale language remains).
     let activeBigFileBatch = null;
-    let activeAlbumMeta = null;   // {key, params} — progressAlbum 当前文案 (albums_count/album_progress)
-    // 进度区状态机快照: 切语言时 refreshProgressText 据此重渲 speed/eta/downloaded
-    // (这些元素无 data-i18n, applyToDOM 跳过; 不快照则 success/interrupted 态切语言后文案冻结).
+    let activeAlbumMeta = null;   // {key, params} — progressAlbum's current copy (albums_count/album_progress)
+    // Progress-section state-machine snapshot: refreshProgressText re-renders
+    // speed/eta/downloaded from this on locale change (these elements have no data-i18n,
+    // so applyToDOM skips them; without a snapshot, copy freezes after a locale change in
+    // the success/interrupted states).
     let dlState = { mode: 'idle', overall: 0, total: 0, speed: 0, remaining: Infinity };
 
     btnDownload.addEventListener('click', () => {
-        // 单按钮多状态: 传输中点击 = 取消, 否则 = 开始下载.
+        // One button, multiple states: click while transferring = cancel, otherwise = start download.
         if (downloading) { cancelDownload(); return; }
         if (!cachedAlbums) return;
-        // HEIC 差评防护: Free 模式 HEIC 原样保留, Windows 默认打不开. 首次下载提示一次.
+        // HEIC bad-review guard: Free mode keeps HEIC as-is, which Windows can't open by
+        // default. Prompt once before the first download.
         if (!localStorage.getItem('photosmove_heic_warned')) {
             const msg = I18N.t('heic_warn');
             if (!confirm(msg)) return;
@@ -463,7 +478,8 @@
             const gen = dlGeneration;
             const batchStartTime = Date.now();
 
-            // 轮询进度 (1s/次, 替代 SSE 长连接 — 避免 TCP send buffer 积压导致进度卡).
+            // Poll progress (once per second, replacing the SSE long connection — avoids
+            // progress stalls from TCP send-buffer backlog).
             currentBatchId = String(batch.id);
             const pollUrl = `${serverUrl}/api/progress-poll?token=${encodeURIComponent(authToken)}&batch=${encodeURIComponent(batch.id)}`;
             let completed = false;
@@ -624,7 +640,7 @@
             progressBar.classList.add('done');
             progressPct.textContent = '100%';
             dlState.mode = 'complete';
-            refreshProgressText(); // speed=完成, eta 空, downloaded 保留当前 overall/total
+            refreshProgressText(); // speed=Done, eta empty, downloaded keeps current overall/total
             doneBadge.textContent = I18N.t('done_badge');
             doneBadge.classList.remove('hidden');
             btnDownload.textContent = I18N.t('redownload');
@@ -820,7 +836,8 @@
         }
     })();
 
-    // 全局错误兜底: 任何未捕获异常都显示在 #connect-error 上, 避免"白屏无错误".
+    // Global error fallback: any uncaught exception is shown on #connect-error, avoiding
+    // a "white screen with no error".
     function showFatalError(source, err) {
         const msg = err && err.message ? err.message : String(err);
         const stack = err && err.stack ? err.stack : '';

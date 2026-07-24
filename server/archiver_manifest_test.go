@@ -112,7 +112,7 @@ func TestWriteBatchZipEmitManifestAppendsTailEntry(t *testing.T) {
 
 // TestCalculateZipSizeIncludesManifestReserve ensures the size returned with
 // EmitManifest is base + manifestReserved + entry overhead so the browser
-// progress bar stays accurate (铁律 2).
+// progress bar stays accurate (iron rule 2).
 func TestCalculateZipSizeIncludesManifestReserve(t *testing.T) {
 	content1 := bytes.Repeat([]byte{'X'}, 512)
 	p1 := writeTestFile(t, "a.jpg", content1)
@@ -131,13 +131,13 @@ func TestCalculateZipSizeIncludesManifestReserve(t *testing.T) {
 // TestCalculateZipSizeCeilingSmartRenameEXIF is a regression test for TWO bugs
 // that pull calculateZipSize in opposite directions:
 //
-//  1. "下载完又重新开始" (Content-Length 溢出): writeFileToZip renames by EXIF
+//  1. "finished then restarted" (Content-Length overflow): writeFileToZip renames by EXIF
 //     capture time and dedups burst shots to _1/_2/..., while calculateZipSize
 //     must NOT read EXIF (see bug 2). If calculateZipSize under-estimates the
 //     dedup suffix length, the real ZIP overruns Content-Length near 100% → Go
 //     aborts → browser re-downloads from 0.
 //
-//  2. "点了下载全部但浏览器没动静" (响应前阻塞): a prior fix made calculateZipSize
+//  2. "clicked download all but the browser did nothing" (blocked before response): a prior fix made calculateZipSize
 //     call smartRenameEntry, which opens + reads 64KB per file. calculateZipSize
 //     runs synchronously BEFORE handleBatch flushes the first byte, so 737 files
 //     = 30-60s of pure disk I/O with the browser seeing nothing.
@@ -147,7 +147,7 @@ func TestCalculateZipSizeIncludesManifestReserve(t *testing.T) {
 // path produces. This test copies ONE real-EXIF JPEG into N entries (identical
 // EXIF second → N-way dedup in the write path) with DISTINCT ModTimes (no
 // dedup on the estimate side), then asserts calculateZipSize >= the bytes
-// writeBatchZip actually writes (铁律 2: Content-Length must be a reliable
+// writeBatchZip actually writes (iron rule 2: Content-Length must be a reliable
 // upper bound) AND that the slack stays tight (no per-file blow-up).
 func TestCalculateZipSizeCeilingSmartRenameEXIF(t *testing.T) {
 	src := "../testdata/Download/30ae0ca2538d2309.jpg" // carries EXIF DateTimeOriginal

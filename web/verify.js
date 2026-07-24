@@ -1,30 +1,32 @@
-// verify.js — 本地字节级校验工具 (ZIP 中央目录解析 + hash-wasm SHA-256).
+// verify.js — local byte-level verification tool (ZIP central directory parsing + hash-wasm SHA-256).
 //
-// 两阶段校验 (Flow):
-//   1. 用户点 [🔍 校验已下载zip文件] → 选本地 ZIP (浏览器 file picker)
-//   2. verify.js 流式解析 ZIP 中央目录 (parseZipCentralDirectory), 建立
-//      fileMap: path → { size, offset }, 单独读出 manifest.json
-//   3. 阶段 1 — 大小预筛 (秒级): 遍历 manifest.files, 缺失 / size 不符
-//      立即分类, 不进入 SHA-256 (省时间)
-//   4. 阶段 2 — 字节级 SHA-256 (对 size 匹配的 entries): 读 local header
-//      算出 dataStart, file.slice 出 entry Blob (引用, 不入内存), 发给
-//      hash-wasm Worker 流式 1MB 分块哈希, 比对 manifest.files[].sha256
-//   5. UI 四类结果: ✔ 字节级完整 / ✗ 字节损坏 (sha 不符) /
-//                  ⚠️ 大小不符 / ✗ 缺失
+// Two-stage verification (Flow):
+//   1. User clicks [🔍 Verify downloaded ZIP] → picks a local ZIP (browser file picker)
+//   2. verify.js streams-parses the ZIP central directory (parseZipCentralDirectory), builds
+//      fileMap: path → { size, offset }, and reads manifest.json separately
+//   3. Stage 1 — size pre-filter (seconds): walk manifest.files; missing / size-mismatch
+//      entries are classified immediately and skip SHA-256 (saves time)
+//   4. Stage 2 — byte-level SHA-256 (for size-matching entries): read the local header
+//      to compute dataStart, file.slice out the entry Blob (a reference, not loaded into
+//      memory), send it to the hash-wasm Worker for streaming 1MB-chunk hashing, and
+//      compare against manifest.files[].sha256
+//   5. UI shows four result classes: ✔ byte-level intact / ✗ corrupted (sha mismatch) /
+//                  ⚠️ size mismatch / ✗ missing
 //
-// 为什么用 hash-wasm (WASM) 而非 SubtleCrypto: PC 浏览器经 HTTP 局域网
-// 访问手机 server (非 HTTPS / 非 localhost), crypto.subtle 不可用
-// (secure-context 限制). WASM 不挑 context, vendor 已内置.
+// Why hash-wasm (WASM) instead of SubtleCrypto: PC browsers reach the phone server over
+// HTTP LAN (not HTTPS / not localhost), so crypto.subtle is unavailable (secure-context
+// restriction). WASM works in any context, and the vendor bundle is built in.
 //
-// 大文件不爆内存: readZipEntry 仅用于读 manifest.json (几 KB). 单个 entry
-// 的 SHA-256 走独立路径 — getDataStart 只读 30 字节 local header, 然后
-// file.slice 拿 Blob (引用), Worker 内部按 1MB 流式哈希, 峰值内存 ~1MB.
+// Large files without blowing memory: readZipEntry is only used for manifest.json (a few
+// KB). Per-entry SHA-256 takes a separate path — getDataStart reads only the 30-byte local
+// header, then file.slice yields a Blob (reference); the Worker hashes it in 1MB streaming
+// chunks, peak memory ~1MB.
 //
-// 取消: 用户随时点 [取消] → terminate Worker (pending 全部 reject), 下次
-// 校验时 ensureWorker() 重建.
+// Cancel: the user can click [Cancel] anytime → terminate the Worker (all pending promises
+// reject); the next verification rebuilds it via ensureWorker().
 //
-// i18n: 所有用户可见文案经 window.I18N.t (verify_* key, 详见 locales/zh|en.js).
-// I18N 由 i18n.js 在本文件之前加载, 全局可用.
+// i18n: all user-visible copy goes through window.I18N.t (verify_* keys, see locales/zh|en.js).
+// I18N is loaded by i18n.js before this file and is globally available.
 (function () {
     'use strict';
 
@@ -40,15 +42,17 @@
 
     if (!btnVerify) return;
 
-    // i18n 守卫: i18n.js 加载失败时 I18N 未定义, 这里 return 避免后续事件回调里
-    // 调 I18N.t 抛 ReferenceError. 静态 data-i18n 元素仍由 app.js 的兜底逻辑覆盖.
+    // i18n guard: if i18n.js fails to load, I18N is undefined; return here so later event
+    // callbacks don't throw ReferenceError on I18N.t. Static data-i18n elements are still
+    // covered by app.js's fallback logic.
     if (typeof I18N === 'undefined') return;
 
     let cancelled = false;
-    // 当前校验阶段快照 (切语言时 rerender 据此重设 verify-progress-text/verify-summary,
-    // 二者无 data-i18n, applyToDOM 跳过). summary = {key, params, strong} 描述当前 summary
-    // 元素文案 ('normal'→<strong>, 'gray'→<strong style=color:#6b7280>, null→纯文本),
-    // 切语言时据此重建, 避免 parsing/stage/cancelled 态残留旧语言.
+    // Snapshot of the current verification stage (on locale change, rerender uses it to
+    // re-set verify-progress-text/verify-summary; neither has data-i18n so applyToDOM skips
+    // them). summary = {key, params, strong} describes the current summary element's copy
+    // ('normal'→<strong>, 'gray'→<strong style=color:#6b7280>, null→plain text); rebuilt
+    // from this on locale change so parsing/stage/cancelled states don't keep stale copy.
     let verifyState = { phase: 'idle', stage: null, summary: null };
 
     function show() { if (panel) panel.classList.remove('hidden'); }
@@ -71,7 +75,8 @@
         else summary.textContent = text;
     }
 
-    // Expose show/hide/rerender for app.js (切语言时 onLocaleChange 调 rerender 重渲动态文案).
+    // Expose show/hide/rerender for app.js (onLocaleChange calls rerender on locale change
+    // to re-render dynamic copy).
     function rerender() {
         if (!verifyState) return;
         renderSummary(verifyState.summary);
@@ -79,12 +84,13 @@
             if (verifyState.phase === 'stage1') progressText.textContent = I18N.t('verify_stage1', verifyState.stage);
             else if (verifyState.phase === 'stage2') progressText.textContent = I18N.t('verify_stage2', verifyState.stage);
         }
-        // done 态走 modal (独立 DOM, 不在此重渲).
+        // done state uses the modal (separate DOM, not re-rendered here).
     }
     window.photosmoveVerify = { show, hide, rerender };
 
-    // 点 [完整性校验] 直接打开 ZIP 选择器, panel 暂不展开 (避免空白白底).
-    // panel 在 onZipPicked 内 (用户选完 ZIP 后) 才 remove('hidden').
+    // Clicking [Verify] opens the ZIP picker directly; the panel stays collapsed for now
+    // (avoids an empty white box). The panel is only remove('hidden')'d inside onZipPicked
+    // (after the user picks a ZIP).
     btnVerify.addEventListener('click', () => {
         reset();
         if (zipInput) zipInput.click();
@@ -94,7 +100,7 @@
         cancelBtn.addEventListener('click', () => {
             cancelled = true;
             verifyState = { phase: 'cancelled', stage: null, summary: { key: 'verify_cancelled', strong: 'gray' } };
-            // terminate Worker 并 reject 所有 in-flight 哈希 (下次校验时重建)
+            // Terminate the Worker and reject all in-flight hashes (rebuilt on next run)
             destroyHasher();
             if (progressBox) progressBox.classList.add('hidden');
             renderSummary(verifyState.summary);
@@ -114,11 +120,13 @@
         }[c]));
     }
 
-    // (路径 A "选解压目录" 已移除 — 现在统一只支持 ZIP 选择, 简化交互.)
+    // (Path A "pick an extracted folder" has been removed — ZIP selection is now the only
+    // supported mode, simplifying the interaction.)
 
-    // 校验入口 (公用): 接收 fileMap (path → {size, offset}) + ZIP File + manifest.
-    // 两阶段: (1) 大小预筛 — 缺失/size 不符立即分类; (2) SHA-256 字节级 — 对
-    // size 匹配的 entries 逐个 hash-wasm 校验. sourceLabel 用于结果弹窗标题.
+    // Verification entry point (shared): takes fileMap (path → {size, offset}) + ZIP File +
+    // manifest. Two stages: (1) size pre-filter — missing/size-mismatch entries classified
+    // immediately; (2) byte-level SHA-256 — hash-wasm check for each size-matching entry.
+    // sourceLabel is used in the result modal title.
     async function runVerify(fileMap, file, manifest, sourceLabel) {
         const entries = manifest.files;
         let mismatched = 0, missing = 0;
@@ -126,9 +134,9 @@
         const mismatchedFiles = [];
         const missingFiles = [];
         const corruptedFiles = [];
-        const sizeMatched = []; // 通过 size 预筛, 待 SHA-256 校验
+        const sizeMatched = []; // passed the size pre-filter, pending SHA-256 check
 
-        // ===== 阶段 1: 大小预筛 (秒级) =====
+        // ===== Stage 1: size pre-filter (seconds) =====
         for (let i = 0; i < entries.length; i++) {
             if (cancelled) break;
             const entry = entries[i];
@@ -146,7 +154,7 @@
                 if (progressFill) progressFill.style.width = '100%';
                 verifyState = { phase: 'stage1', stage: { i: i + 1, n: entries.length }, summary: verifyState.summary };
                 if (progressText) progressText.textContent = I18N.t('verify_stage1', { i: i + 1, n: entries.length });
-                // Yield 让进度条重绘.
+                // Yield so the progress bar repaints.
                 await new Promise(r => setTimeout(r, 0));
             }
         }
@@ -157,7 +165,7 @@
             return;
         }
 
-        // ===== 阶段 2: SHA-256 字节级 (对 size 匹配的 entries) =====
+        // ===== Stage 2: byte-level SHA-256 (for size-matching entries) =====
         if (sizeMatched.length > 0) {
             ensureHasher();
             const total = sizeMatched.length;
@@ -166,13 +174,15 @@
                 const { entry, f } = sizeMatched[i];
 
                 if (!entry.sha256) {
-                    // manifest 无 sha256 留底 — 仅 size 匹配, 无法字节级校验.
+                    // manifest has no sha256 on record — size matches only; byte-level
+                    // verification impossible.
                     sizeOnly++;
                 } else {
                     let sha = null;
                     try {
                         const dataStart = await getDataStart(file, f);
-                        // Blob 是引用 (不读入内存), Worker 内部按 1MB 流式哈希.
+                        // The Blob is a reference (not read into memory); the Worker hashes
+                        // it internally in 1MB streaming chunks.
                         const entryBlob = file.slice(dataStart, dataStart + entry.size);
                         sha = await hashEntry(entryBlob);
                     } catch (err) {
@@ -202,7 +212,7 @@
             return;
         }
 
-        // ===== 结果弹窗 (四类) =====
+        // ===== Result modal (four classes) =====
         const totalSize = entries.reduce((s, e) => s + (e.size || 0), 0);
         let html = '<div class="verify-modal-title">' + I18N.t('verify_result_title', { source: escapeHtml(sourceLabel) }) + '</div>';
         html += '<div class="verify-modal-stat ok">' + I18N.t('verify_ok', { count: byteOk }) + '</div>';
@@ -220,7 +230,7 @@
         }
         html += '<div class="verify-modal-meta">' + I18N.t('verify_total', { size: fmtSize(totalSize), count: entries.length }) + '</div>';
 
-        // 详情列表 (损坏 + 不符 + 缺失, 每类 cap 25).
+        // Detail list (corrupted + mismatched + missing, capped at 25 per class).
         const DETAIL_CAP = 25;
         const cCap = corruptedFiles.slice(0, DETAIL_CAP);
         const mCap = mismatchedFiles.slice(0, DETAIL_CAP);
@@ -252,12 +262,13 @@
         if (progressBox) progressBox.classList.add('hidden');
     }
 
-    // ============== hash-wasm Worker 管理 (SHA-256 字节级) ==============
+    // ============== hash-wasm Worker management (byte-level SHA-256) ==============
     //
-    // 单 Worker 串行处理: 简单 + 避免并发拉多个大 Blob 进内存. 每个 entry
-    // postMessage 一个 Blob (引用, 不拷贝全量), Worker 流式 1MB 分块哈希.
-    // Promise + id 关联 (Map<id, resolve/reject>), 取消时 terminate Worker
-    // 并 reject 所有 pending, 下次校验 ensureHasher() 重建.
+    // A single Worker processes entries serially: simple + avoids pulling multiple large
+    // Blobs into memory concurrently. Each entry postMessages one Blob (a reference, not a
+    // full copy); the Worker hashes it in 1MB streaming chunks. Promise + id correlation
+    // (Map<id, resolve/reject>); on cancel, terminate the Worker and reject all pending,
+    // then ensureHasher() rebuilds it on the next run.
     let hasherWorker = null;
     let nextHashId = 1;
     const pendingHashes = new Map(); // id → { resolve, reject }
@@ -287,7 +298,8 @@
             hasherWorker.terminate();
             hasherWorker = null;
         }
-        // terminate 不会触发 onmessage → 主动 reject 所有 in-flight, 唤醒 await.
+        // terminate() does not fire onmessage → proactively reject all in-flight promises
+        // to wake up their awaits.
         for (const [, p] of pendingHashes) p.reject(new Error('cancelled'));
         pendingHashes.clear();
     }
@@ -300,11 +312,12 @@
         });
     }
 
-    // getDataStart: 读 entry 的 local file header (30 字节) 算出数据起点.
-    // 与 readZipEntry 共享 local header 解析逻辑, 但只返回 dataStart 偏移,
-    // 不把 entry 内容读成 Uint8Array (避免大文件爆内存). 调用方用 file.slice
-    // 拿 Blob 引用后交给 Worker 流式哈希.
-    //   local header layout:  [0..4)  签名 0x04034b50
+    // getDataStart: read the entry's local file header (30 bytes) to compute where the
+    // data begins. Shares local-header parsing logic with readZipEntry, but returns only
+    // the dataStart offset without reading the entry contents into a Uint8Array (avoids
+    // blowing memory on large files). The caller file.slice's a Blob reference and hands
+    // it to the Worker for streaming hashing.
+    //   local header layout:  [0..4)  signature 0x04034b50
     //                         [26..28) fileNameLen
     //                         [28..30) extraLen
     //   dataStart = offset + 30 + fileNameLen + extraLen
@@ -319,26 +332,31 @@
         return entry.offset + 30 + fileNameLen + extraLen;
     }
 
-    // ============== 直接选 ZIP 校验 (流式中央目录解析, 不解压内容) ==============
+    // ============== Direct ZIP-pick verification (streaming central-directory parsing,
+    //                no content decompression) ==============
     //
-    // PhotosMove ZIP 用 Store 模式 (不压缩), verify 只需要每个 entry 的
-    // uncompressed_size, 不需要解压内容. 直接读 ZIP 中央目录 (CD) 提取
-    // filename + size, manifest.json 单独用 file.slice 局部读取.
+    // PhotosMove ZIPs use Store mode (no compression), so verify only needs each entry's
+    // uncompressed_size, not the decompressed content. Read the ZIP central directory (CD)
+    // directly to extract filename + size; manifest.json is read separately via a partial
+    // file.slice.
     //
-    // 内存占用: 末尾 64KB (找 EOCD) + 中央目录字节 (CD 通常 < 1MB/1000 文件)
-    // + manifest.json 本身 (几 KB). 总计 ~几 MB, 与 ZIP 总大小无关.
-    // 对比旧实现 (fflate.unzipSync): 1GB ZIP 占 3GB 内存, 9.84GB ZIP 直接 OOM.
+    // Memory usage: trailing 64KB (to find the EOCD) + central-directory bytes (CD is
+    // typically < 1MB per 1000 files) + manifest.json itself (a few KB). Total ~a few MB,
+    // independent of the ZIP's total size. Compare with the old implementation
+    // (fflate.unzipSync): a 1GB ZIP used 3GB of memory; a 9.84GB ZIP went straight to OOM.
 
-    // 读小端 uint64 (ZIP64), 返回 Number. JS Number 最大安全整数 2^53,
-    // 单文件 < 8PB 都能表示, 远超实际需求.
+    // Read a little-endian uint64 (ZIP64), returned as a Number. JS Number's max safe
+    // integer is 2^53, so any single file < 8PB is representable — far beyond real needs.
     function readU64(view, offset, le) {
         return Number(view.getBigUint64(offset, le));
     }
 
-    // 在 CD entry 的 extra 字段里找 ZIP64 扩展 (tag 0x0001), 按需读取 64-bit 字段.
-    // ZIP64 字段顺序固定为: OriginalSize → CompressedSize → LocalHeaderOffset → DiskNumber
-    // (CD 主项中对应字段 == 0xFFFFFFFF 时, 该字段才出现在 extra 里).
-    // 解析时必须按此顺序累加 q, 不能因 wantCompressed=false 就跳过 — 否则读 offset 会错位.
+    // Find the ZIP64 extension (tag 0x0001) in a CD entry's extra field and read the
+    // 64-bit fields on demand. The ZIP64 field order is fixed: OriginalSize →
+    // CompressedSize → LocalHeaderOffset → DiskNumber (a field appears in extra only when
+    // the corresponding CD field == 0xFFFFFFFF). Parsing must advance q in this exact
+    // order — do not skip a field just because wantCompressed=false, or the offset read
+    // will be misaligned.
     function readZip64Extra(view, extraOff, extraLen, uncompIsZ64, compIsZ64, offsetIsZ64) {
         let uncompressed = null, compressed = null, offset = null;
         let p = extraOff;
@@ -348,7 +366,8 @@
             const sz = view.getUint16(p + 2, true);
             if (tag === 0x0001) {
                 let q = p + 4;
-                // 按 spec 顺序读所有出现的字段, 即使 caller 不关心也要推进 q.
+                // Read all present fields in spec order, advancing q even for fields the
+                // caller doesn't care about.
                 if (uncompIsZ64) { uncompressed = readU64(view, q, true); q += 8; }
                 if (compIsZ64) { compressed = readU64(view, q, true); q += 8; }
                 if (offsetIsZ64) { offset = readU64(view, q, true); q += 8; }
@@ -359,7 +378,7 @@
         return { uncompressed, compressed, offset };
     }
 
-    // 显示错误并隐藏进度条 (不再残留"取消"按钮 + 0% 进度条).
+    // Show an error and hide the progress bar (no lingering "Cancel" button + 0% bar).
     function showError(title, detail) {
         const html = '<div class="verify-modal-title err">' + escapeHtml(title) + '</div>' +
             (detail ? '<div class="verify-modal-meta">' + escapeHtml(detail) + '</div>' : '');
@@ -368,14 +387,16 @@
         if (progressBox) progressBox.classList.add('hidden');
     }
 
-    // 校验结果弹窗: 不在页面展示 (避免占用 dashboard 空间). 点遮罩或 Esc 关闭.
+    // Verification result modal: not rendered into the page (avoids taking dashboard
+    // space). Closed by clicking the mask or pressing Esc.
     let _resultEscHandler = null;
     function showResultModal(innerHTML) {
         hideResultModal();
         const mask = document.createElement('div');
         mask.className = 'verify-modal-mask';
         mask.innerHTML = '<div class="verify-modal">' + innerHTML + '</div>';
-        // 点 mask (弹窗外) → 关闭; 点 modal 内容 → stopPropagation 不关闭.
+        // Click on the mask (outside the modal) → close; click on modal content →
+        // stopPropagation, stays open.
         mask.addEventListener('click', hideResultModal);
         const modal = mask.querySelector('.verify-modal');
         if (modal) modal.addEventListener('click', e => e.stopPropagation());
@@ -408,7 +429,7 @@
                 return;
             }
 
-            // 读 manifest.json 的实际字节 (用 file.slice 只读这一小块).
+            // Read manifest.json's actual bytes (file.slice reads only this small block).
             const manifestBytes = await readZipEntry(file, result.manifestEntry);
             let manifest;
             try {
@@ -428,25 +449,29 @@
         }
     }
 
-    // parseZipCentralDirectory 流式解析 ZIP 中央目录, 返回 { fileMap, manifestEntry }.
-    // fileMap: Map<path, { size, offset, compressed }> (offset 指向 local header)
-    // manifestEntry: 第一个 path 包含 'manifest.json' 的 entry.
-    // 流式从文件末尾往前扫描 EOCD 签名 (0x06054b50).
-    // 为什么不固定读末尾 64KB? 因为 server 端 padToZipSize 可能在 ZIP 末尾追加
-    // 零字节 padding (HEIC 3x 估算偏差 / EXIF strip 后实际变小), 如果 padding
-    // 超过 64KB, 固定窗口扫不到 EOCD. 改为流式扫描, 每次读 1MB chunk 往前推,
-    // 找到签名即停. 最坏情况扫整个文件, 但实际很快 (EOCD 总在末尾附近).
+    // parseZipCentralDirectory streams-parses the ZIP central directory and returns
+    // { fileMap, manifestEntry }.
+    // fileMap: Map<path, { size, offset, compressed }> (offset points at the local header)
+    // manifestEntry: the first entry whose path contains 'manifest.json'.
+    // Streams backward from the end of the file scanning for the EOCD signature
+    // (0x06054b50).
+    // Why not a fixed trailing 64KB read? Because the server-side padToZipSize may append
+    // zero-byte padding at the end of the ZIP (HEIC 3x estimation overshoot / actual size
+    // shrinking after EXIF strip); if the padding exceeds 64KB, a fixed window would miss
+    // the EOCD. Instead we scan streaming, reading 1MB chunks going backward and stopping
+    // at the signature. Worst case scans the whole file, but in practice it's fast (the
+    // EOCD is always near the end).
     async function findEocd(file) {
         const chunkSize = 1024 * 1024; // 1 MB
-        const minEocdSize = 22; // EOCD 最少 22 字节
-        let fileOffset = file.size; // 末尾位置, 往前推
-        const chunks = []; // 缓存已读 chunks, 后续 ZIP64 locator/EOCD 解析可能需要
+        const minEocdSize = 22; // EOCD is at least 22 bytes
+        let fileOffset = file.size; // end position, moving backward
+        const chunks = []; // cache read chunks; ZIP64 locator/EOCD parsing may need them
         while (fileOffset > 0) {
             const readSize = Math.min(chunkSize, fileOffset);
             const start = fileOffset - readSize;
             const buf = new Uint8Array(await file.slice(start, fileOffset).arrayBuffer());
             const view = new DataView(buf.buffer);
-            // 在当前 chunk 内从后往前扫
+            // Scan backward within the current chunk
             for (let i = buf.length - minEocdSize; i >= 0; i--) {
                 if (view.getUint32(i, true) === 0x06054b50) {
                     return { start, position: i, buf, view };
@@ -454,29 +479,31 @@
             }
             chunks.unshift({ start, buf, view });
             fileOffset = start;
-            // 安全上限: 不扫超过 file.size (整个文件最坏情况). 但实际 EOCD
-            // 一定在末尾 64KB 内 (除非有大量 padding), 通常 1-2 个 chunk 找到.
-            if (chunks.length > 64) break; // 64 MB 上限, 防极端情况
+            // Safety bound: never scan more than file.size (whole-file worst case). In
+            // practice the EOCD is always within the trailing 64KB (unless there is heavy
+            // padding), so it's usually found in 1-2 chunks.
+            if (chunks.length > 64) break; // 64 MB cap against pathological cases
         }
         return null;
     }
 
     async function parseZipCentralDirectory(file) {
-        // 1. 流式找 EOCD (End of Central Directory)
+        // 1. Stream-scan for the EOCD (End of Central Directory)
         const eocd = await findEocd(file);
         if (!eocd) throw new Error(I18N.t('verify_err_no_eocd'));
         const { start: eocdChunkStart, position: eocdOff, view: tailView } = eocd;
-        // EOCD 在整个文件中的绝对 offset
+        // Absolute offset of the EOCD within the whole file
         const eocdAbsOffset = eocdChunkStart + eocdOff;
 
         let totalEntries = tailView.getUint16(eocdOff + 10, true);
         let cdSize = tailView.getUint32(eocdOff + 12, true);
         let cdOffset = tailView.getUint32(eocdOff + 16, true);
 
-        // 2. 检查 ZIP64 (任一字段 == 0xFFFFFFFF 都说明有 ZIP64 扩展)
+        // 2. Check for ZIP64 (any field == 0xFFFFFFFF means a ZIP64 extension is present)
         if (totalEntries === 0xFFFF || cdOffset === 0xFFFFFFFF || cdSize === 0xFFFFFFFF) {
-            // ZIP64 EOCD Locator 在 EOCD 前 20 字节, 签名 0x07064b50
-            // locator 可能跨 chunk 边界, 简化处理: 读 eocdAbsOffset - 20 起 20 字节
+            // The ZIP64 EOCD Locator sits 20 bytes before the EOCD, signature 0x07064b50.
+            // It may straddle a chunk boundary, so simplify: read 20 bytes starting at
+            // eocdAbsOffset - 20.
             const locatorBuf = new Uint8Array(await file.slice(eocdAbsOffset - 20, eocdAbsOffset).arrayBuffer());
             const locatorView = new DataView(locatorBuf.buffer);
             if (locatorView.getUint32(0, true) === 0x07064b50) {
@@ -485,11 +512,11 @@
                 const z64EocdOffsetHigh = locatorView.getUint32(12, true);
                 const z64EocdOffset = z64EocdOffsetHigh * 0x100000000 + z64EocdOffsetLow;
 
-                // ZIP64 EOCD 56 字节起, 签名 0x06064b50
+                // The ZIP64 EOCD is at least 56 bytes, signature 0x06064b50
                 const z64 = new Uint8Array(await file.slice(z64EocdOffset, z64EocdOffset + 56).arrayBuffer());
                 const z64View = new DataView(z64.buffer);
                 if (z64View.getUint32(0, true) !== 0x06064b50) throw new Error(I18N.t('verify_err_zip64_eocd'));
-                totalEntries = readU64(z64View, 32, true);  // 实际 entries (CD 这一个 disk)
+                totalEntries = readU64(z64View, 32, true);  // actual entries (CD on this disk)
                 cdSize = readU64(z64View, 40, true);
                 cdOffset = readU64(z64View, 48, true);
             } else {
@@ -497,7 +524,7 @@
             }
         }
 
-        // 3. 读中央目录, 遍历 entries
+        // 3. Read the central directory and walk the entries
         const cd = new Uint8Array(await file.slice(cdOffset, cdOffset + cdSize).arrayBuffer());
         const cdView = new DataView(cd.buffer);
 
@@ -517,7 +544,7 @@
             const fileNameBytes = cd.subarray(off + 46, off + 46 + fileNameLen);
             const path = new TextDecoder().decode(fileNameBytes);
 
-            // ZIP64 扩展: 0xFFFFFFFF → 实际值在 extra
+            // ZIP64 extension: 0xFFFFFFFF → actual value lives in extra
             const compSize32 = cdView.getUint32(off + 20, true);
             if (uncompressedSize === 0xFFFFFFFF || compSize32 === 0xFFFFFFFF || localHeaderOffset === 0xFFFFFFFF) {
                 const z = readZip64Extra(cdView, off + 46 + fileNameLen, extraLen,
@@ -540,9 +567,9 @@
         return { fileMap, manifestEntry };
     }
 
-    // readZipEntry 用 file.slice 只读单个 entry 的内容字节 (不解压其他文件).
-    // Entry 的 offset 指向 local file header (签名 0x04034b50), 30 字节固定
-    // + filename + extra 之后才是数据.
+    // readZipEntry uses file.slice to read only a single entry's content bytes (without
+    // decompressing anything else). The entry's offset points at the local file header
+    // (signature 0x04034b50); the data starts after the fixed 30 bytes + filename + extra.
     async function readZipEntry(file, entry) {
         const lh = new Uint8Array(await file.slice(entry.offset, entry.offset + 30).arrayBuffer());
         const lhView = new DataView(lh.buffer);

@@ -10,7 +10,7 @@
     <string name="status_stopped">Service stopped</string>
     <string name="status_error">Service error</string>
     <string name="notif_service_running">Photo transfer service running</string>
-    <!-- D7: channel name 语言无关品牌名(NotificationChannel 创建后 name 不随语言刷新) -->
+    <!-- D7: channel name is a language-independent brand name (NotificationChannel name does not refresh with language after creation) -->
     <string name="notif_channel_name">PhotosMove</string>
     <string name="notif_transferring">Transferring %1$d%% · %2$s/%3$s</string>
     <string name="notif_done">Transfer complete · %1$s</string>

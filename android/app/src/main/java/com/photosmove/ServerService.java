@@ -66,12 +66,17 @@ public class ServerService extends Service {
     private static volatile String lastStatus = "starting";
     private static volatile String lastPin = "";
     private static volatile String lastUrl = "";
-    // 运行中实例: MainActivity 切语言后调 refreshNotificationLocale 用 wrapped context
-    // 重建通知, 使 API 26-32 运行中切换语言时通知文案跟随 (D7), 无需重启 Service.
+    // Running instance: after MainActivity switches language, it calls
+    // refreshNotificationLocale to rebuild the notification with a wrapped context,
+    // so notification text follows language switches on API 26-32 at runtime (D7)
+    // without restarting the Service.
     private static volatile ServerService instance = null;
-    // 当前生效 locale 的 context (切语言时由 refreshNotificationLocale 更新). 所有 notif
-    // getString 走此 context 而非冻结的 this, 使运行中切语言后 PROGRESS/DONE/... 文案
-    // 也跟随 (review 第三轮: 旧实现 refreshNotificationLocale 一次性重建被下一行 this.getString 覆盖).
+    // Context carrying the currently effective locale (updated by
+    // refreshNotificationLocale on language switch). All notif getString calls go
+    // through this context instead of the frozen `this`, so PROGRESS/DONE/... text
+    // also follows a runtime language switch (review round 3: the old implementation
+    // rebuilt once in refreshNotificationLocale, then got overwritten by the next
+    // line's this.getString).
     private volatile Context localizedCtx = null;
 
     public static String getLastStatus() { return lastStatus; }
@@ -80,10 +85,12 @@ public class ServerService extends Service {
 
     @Override
     protected void attachBaseContext(Context base) {
-        // 与 App/MainActivity 一致: API 26-32 手动选语言时 wrap Service context,
-        // 使 getString(R.string.notif_*) 跟随 (API 33+ 由 LocaleManager app 级接管, wrap 为 no-op).
+        // Consistent with App/MainActivity: wrap the Service context when a language is
+        // manually chosen on API 26-32, so getString(R.string.notif_*) follows (on API 33+
+        // LocaleManager takes over app-wide and wrap is a no-op).
         super.attachBaseContext(LocaleHelper.wrap(base));
-        // 初始化 localizedCtx = 当前生效 locale context; 运行中切语言时 refreshNotificationLocale 更新.
+        // Initialize localizedCtx = context with the currently effective locale;
+        // updated by refreshNotificationLocale on runtime language switch.
         localizedCtx = LocaleHelper.resolveLocalizedContext(this);
     }
 
@@ -124,10 +131,12 @@ public class ServerService extends Service {
 
             PowerManager pm = (PowerManager) getApplicationContext().getSystemService(POWER_SERVICE);
             if (pm != null) {
-                // SCREEN_DIM_WAKE_LOCK: 屏幕变暗但保持亮起, 防止 HyperOS/MIUI
-                // 在屏幕灭时把 FGS 当 idle 杀掉 (PARTIAL_WAKE_LOCK 只保 CPU,
-                // 屏幕灭后 60s SmartPower 仍会 cancel FGS notification + stop service).
-                // deprecated 但仍可用, 是 HyperOS 后台限制的唯一规避方式.
+                // SCREEN_DIM_WAKE_LOCK: keeps the screen on but dimmed, preventing
+                // HyperOS/MIUI from killing the FGS as idle when the screen turns off
+                // (PARTIAL_WAKE_LOCK only keeps the CPU; 60s after screen-off SmartPower
+                // still cancels the FGS notification + stops the service).
+                // Deprecated but still functional; the only workaround for HyperOS
+                // background restrictions.
                 cpuWakeLock = pm.newWakeLock(
                         PowerManager.SCREEN_DIM_WAKE_LOCK | PowerManager.ON_AFTER_RELEASE,
                         "photosmove::ScreenWakeLock");
@@ -173,8 +182,8 @@ public class ServerService extends Service {
 
     @SuppressWarnings("deprecation")
     private String getWifiIP() {
-        // 优先 ConnectivityManager.getLinkProperties (现代 API, Android 6+).
-        // WifiManager.getConnectionInfo().getIpAddress() 在 Android 12+ 不可靠 (返回 0).
+        // Prefer ConnectivityManager.getLinkProperties (modern API, Android 6+).
+        // WifiManager.getConnectionInfo().getIpAddress() is unreliable on Android 12+ (returns 0).
         try {
             ConnectivityManager cm = (ConnectivityManager)
                     getApplicationContext().getSystemService(CONNECTIVITY_SERVICE);
@@ -188,7 +197,7 @@ public class ServerService extends Service {
         } catch (Exception e) {
             Log.e(TAG, "getWifiIP (ConnectivityManager) failed", e);
         }
-        // fallback: WifiManager.getIpAddress (旧设备/极端情况)
+        // fallback: WifiManager.getIpAddress (old devices / edge cases)
         try {
             WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
             if (wm != null) {
@@ -204,7 +213,7 @@ public class ServerService extends Service {
         return null;
     }
 
-    // 从 LinkProperties 提取首个 IPv4 非 loopback 地址, 无则 null.
+    // Extract the first IPv4 non-loopback address from LinkProperties, or null if none.
     private String extractIpv4(LinkProperties lp) {
         if (lp == null) return null;
         for (LinkAddress addr : lp.getLinkAddresses()) {
@@ -216,8 +225,8 @@ public class ServerService extends Service {
         return null;
     }
 
-    // 注册 NetworkCallback 监听 WiFi 连接/断开, 实现 URL 自动更新 (无需重启 app).
-    // 回调在系统 binder 线程触发, broadcast/updateNotification 线程安全.
+    // Register a NetworkCallback listening for WiFi connect/disconnect to auto-update the URL (no app restart needed).
+    // Callbacks fire on a system binder thread; broadcast/updateNotification are thread-safe.
     private void registerWifiCallback() {
         try {
             ConnectivityManager cm = (ConnectivityManager)
@@ -256,8 +265,8 @@ public class ServerService extends Service {
 
             cm.registerNetworkCallback(req, networkCallback);
 
-            // 初始检测: 若当前无活动 WiFi (或无 IPv4), 立即提示 wifi_required.
-            // (若 WiFi 已连, onLinkPropertiesChanged 会很快触发并广播真实 URL.)
+            // Initial check: if there is no active WiFi (or no IPv4), show wifi_required immediately.
+            // (If WiFi is already connected, onLinkPropertiesChanged fires shortly and broadcasts the real URL.)
             Network active = cm.getActiveNetwork();
             boolean hasWifi = false;
             if (active != null) {
@@ -306,16 +315,19 @@ public class ServerService extends Service {
     }
 
     /**
-     * 运行中切语言后由 MainActivity 调用: 更新 localizedCtx 为新 locale context 并重建当前通知,
-     * 使后续 PROGRESS/DONE/... 的 updateNotification(localizedCtx.getString) 也跟随 (D7).
-     * API 33+ LocaleManager app 级覆盖, resolveLocalizedContext 返回 base, 但仍需重建已显示通知.
+     * Called by MainActivity after a runtime language switch: updates localizedCtx to a context
+     * with the new locale and rebuilds the current notification, so subsequent PROGRESS/DONE/...
+     * updateNotification(localizedCtx.getString) calls also follow (D7).
+     * On API 33+ LocaleManager covers the app level and resolveLocalizedContext returns base,
+     * but the already-shown notification still needs rebuilding.
      */
     public static void refreshNotificationLocale(Context appCtx) {
         ServerService svc = instance;
         if (svc == null) return;
-        // 用 svc 而非 appCtx: 26-32 resolveLocalizedContext 会覆盖 locale (与 base 无关, 等价);
-        // 33+ 返回 base, svc (Service context) 无歧义跟随 LocaleManager, 而 appCtx (旧 Activity)
-        // 在 recreate 前 config 可能滞后于 setApplicationLocales.
+        // Use svc rather than appCtx: on API 26-32 resolveLocalizedContext overrides the locale
+        // (base-independent, equivalent); on API 33+ it returns base, and svc (Service context)
+        // unambiguously follows LocaleManager, whereas appCtx (the old Activity) may have a
+        // config lagging behind setApplicationLocales before recreate.
         svc.localizedCtx = LocaleHelper.resolveLocalizedContext(svc);
         svc.doRefreshNotification(svc.localizedCtx);
     }
@@ -326,7 +338,8 @@ public class ServerService extends Service {
         Intent notifIntent = new Intent(this, MainActivity.class);
         PendingIntent pi = PendingIntent.getActivity(this, 0, notifIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        // 重建静态通知文案; 若传输进行中, 后续 PROGRESS 走 localizedCtx.getString 已跟随新语言.
+        // Rebuild the static notification text; if a transfer is in progress, subsequent PROGRESS
+        // updates already follow the new language via localizedCtx.getString.
         String text = "wifi_required".equals(lastStatus)
                 ? ctx.getString(R.string.notif_wifi_required)
                 : ctx.getString(R.string.notif_service_running);
@@ -365,9 +378,10 @@ public class ServerService extends Service {
             String nativeLibDir = getApplicationInfo().nativeLibraryDir;
             File binary = new File(nativeLibDir, "libphotosmove.so");
 
-            // getWifiIP 一次取值, 失败则不传 -lan-ip —— Go 端 getLANIP 用 udp 探测兜底
-            // (net.Dial 查路由表, 比 WifiManager.getIpAddress 鲁棒, 不依赖 WiFi 就绪状态).
-            // 不再阻塞启动重试 (之前 10s 循环导致 app 启动慢).
+            // getWifiIP is read once; on failure -lan-ip is not passed — the Go side's getLANIP
+            // falls back to UDP probing (net.Dial consults the routing table; more robust than
+            // WifiManager.getIpAddress and independent of WiFi readiness).
+            // No longer blocks startup with retries (the previous 10s loop slowed app startup).
             String wifiIP = getWifiIP();
             Log.i(TAG, "photosmove v" + VERSION + " starting");
             Log.i(TAG, "WiFi IP: " + wifiIP);
@@ -387,7 +401,7 @@ public class ServerService extends Service {
             serverProcess = pb.start();
             serverStdout = serverProcess.getInputStream();
 
-            // 注册 NetworkCallback: WiFi 断开→提示, WiFi 连上→自动更新 URL (无需重启 app).
+            // Register NetworkCallback: WiFi lost → prompt, WiFi connected → auto-update URL (no app restart needed).
             registerWifiCallback();
 
             BufferedReader reader = new BufferedReader(
@@ -450,8 +464,9 @@ public class ServerService extends Service {
                     if (idx >= 0) {
                         detectedUrl = line.substring(idx);
                     }
-                    // Go 在 WiFi 未连时打印 0.0.0.0 —— 此时不广播 running URL,
-                    // 由 NetworkCallback 负责 wifi_required 提示 / 真实 URL 更新.
+                    // Go prints 0.0.0.0 when WiFi is not connected — in that case do not
+                    // broadcast a running URL; the NetworkCallback handles the wifi_required
+                    // prompt / real URL update.
                     if (!detectedUrl.contains("0.0.0.0")) {
                         broadcast("running", detectedPin, detectedUrl);
                     }

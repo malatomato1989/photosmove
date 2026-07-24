@@ -10,7 +10,7 @@
     <string name="status_stopped">服务已停止</string>
     <string name="status_error">服务异常</string>
     <string name="notif_service_running">照片传输服务运行中</string>
-    <!-- D7: channel name 语言无关品牌名(NotificationChannel 创建后 name 不随语言刷新) -->
+    <!-- D7: channel name is a language-independent brand name (NotificationChannel name does not refresh with language after creation) -->
     <string name="notif_channel_name">PhotosMove</string>
     <string name="notif_transferring">传输中 %1$d%% · %2$s/%3$s</string>
     <string name="notif_done">传输完成 · %1$s</string>
@@ -36,7 +36,7 @@
     <string name="btn_copy_done">已复制</string>
     <string name="btn_grant_permission">授予存储权限</string>
 
-    <!-- Privacy (Play 合规: 应用内隐私政策入口, 点击用系统浏览器打开) -->
+    <!-- Privacy (Play compliance: in-app privacy policy entry, opens in system browser on tap) -->
     <string name="privacy_policy">隐私政策</string>
     <string name="privacy_policy_url">https://github.com/malatomato1989/photosmove/blob/main/docs/privacy.md</string>
     <string name="no_browser">未找到可打开链接的浏览器</string>

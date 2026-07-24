@@ -235,15 +235,17 @@ func extractToken(r *http.Request) string {
 	return token
 }
 
-// writeErr 写语言无关的 error code 响应 (spec ui-localization Req5:
-// 服务端只回 code, 前端按当前 locale 翻译, 不含任何中英文 message 文案).
+// writeErr writes a language-neutral error code response (spec ui-localization Req5:
+// the server only returns code, the front-end translates per current locale,
+// no Chinese/English message text included).
 func writeErr(w http.ResponseWriter, status int, code string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	fmt.Fprintf(w, `{"code":%q}`, code)
 }
 
-// writeErrDetail 同上, 附 detail 字段(底层技术信息, 原样保留不翻译, 如扫描失败的原始 error).
+// writeErrDetail is the same as writeErr, plus a detail field (low-level
+// technical info kept verbatim, untranslated, e.g. the raw scan failure error).
 func writeErrDetail(w http.ResponseWriter, status int, code, detail string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -348,9 +350,10 @@ func (s *server) pregenerateThumbs() {
 	s.mu.RUnlock()
 
 	for _, job := range jobs {
-		// 单图 tiles: 每张源图独立 resize → JPEG, 供 /api/thumb/{i}/{n} 单格
-		// 加载填满 grid (composite 只 1 张填不满多格). 仅图片相册生成 (视频相册
-		// 走 videothumb, 无单图 tiles 需求).
+		// Single-image tiles: each source image is resized independently to JPEG
+		// for /api/thumb/{i}/{n} per-cell loading to fill the grid (a composite
+		// is only 1 image and cannot fill multiple cells). Only generated for
+		// image albums (video albums use videothumb, no single-image tiles needed).
 		if !job.isVideo {
 			if tiles := s.generateThumbTiles(job.files); len(tiles) > 0 {
 				s.mu.Lock()
@@ -376,9 +379,10 @@ func (s *server) pregenerateThumbs() {
 
 // handleThumb serves the pre-generated thumbnail image for an album.
 //
-//	GET /api/thumb/{albumIndex}        → 2x2 composite (legacy, 整个相册一张)
-//	GET /api/thumb/{albumIndex}/{n}    → 第 n 张单图 tile (150×150), 让前端
-//	                                     按容器宽度加载多张填满 thumb grid
+//	GET /api/thumb/{albumIndex}        → 2x2 composite (legacy, one image per album)
+//	GET /api/thumb/{albumIndex}/{n}    → the n-th single-image tile (150×150), letting
+//	                                     the front-end load multiple tiles by container
+//	                                     width to fill the thumb grid
 func (s *server) handleThumb(w http.ResponseWriter, r *http.Request) {
 	rest := r.URL.Path[len("/api/thumb/"):]
 	idStr := rest
@@ -405,7 +409,7 @@ func (s *server) handleThumb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 单图 tile 路径: 越界返回 404 (前端 onerror 移除该格子).
+	// Single-image tile path: out-of-range returns 404 (front-end onerror removes that cell).
 	if tileN >= 0 {
 		tiles := s.thumbTiles[id]
 		if tileN >= len(tiles) {
@@ -421,7 +425,7 @@ func (s *server) handleThumb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 默认: composite
+	// Default: composite
 	data, ok := s.thumbs[id]
 	s.mu.RUnlock()
 
@@ -518,10 +522,11 @@ func (s *server) handleSelect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Plan D (T-big-3): both Free and Pro share the same batch planner.
-	// §5.2 v3 explicitly says Free includes video ("原视频字节级保留
-	// 4K/60fps"). The legacy "Free filters videos" branch was a leftover
+	// §5.2 v3 explicitly says Free includes video ("original video preserved
+	// byte-for-byte, 4K/60fps"). The legacy "Free filters videos" branch was a leftover
 	// from the abandoned Plan A design (§5.1) and contradicted the spec.
-	// Free/Pro 差异只在 Pro 三大钩子 (完整性/增量/文件夹), 不在传输内容.
+	// The Free/Pro difference is only in the three Pro hooks (integrity /
+	// incremental / folder), not in the transferred content.
 	// single-zip-trust-tcp §1.2.1: collapse every selected file into ONE
 	// batch. The browser downloads a single ZIP via one <a>.click() —
 	// multi-batch looping is blocked by browser auto-download limits.
@@ -616,7 +621,7 @@ func (s *server) handleBatches(w http.ResponseWriter, r *http.Request) {
 }
 
 // padToZipSize back-fills zero bytes so the response body matches the
-// declared Content-Length. 铁律 2: ANY underflow (manifest reserved-size
+// declared Content-Length. Iron rule 2: ANY underflow (manifest reserved-size
 // drift, HEIC 3x estimation miss) MUST be back-filled — otherwise the
 // browser download progress freezes at 99% indefinitely because the body
 // is shorter than Content-Length. After padding, the progress entry is
@@ -648,7 +653,7 @@ func padToZipSize(w io.Writer, written, zipSize int64, batchID string) {
 // done/cancelled state. Deleting immediately after writeBatchZip finishes
 // races the polling loop: getBatchProgress returns nil → the poll response
 // reports sent=0, done=false forever → the browser UI never sees completion
-// and stays stuck on "取消传输" + "已暂停" even though the ZIP is fully
+// and stays stuck on "cancel transfer" + "paused" even though the ZIP is fully
 // delivered. 15s = ~15 poll cycles, ample headroom; batchID is unique per
 // download so the delay never blocks the next one.
 func scheduleProgressCleanup(batchID string) {
@@ -700,19 +705,21 @@ func (s *server) handleBatch(w http.ResponseWriter, r *http.Request) {
 
 	flatMode := false
 
-	// Free 模式下载文件名固定为 photos.zip (single-zip-trust-tcp: 一个相册一个 ZIP).
+	// Free mode download filename is fixed to photos.zip (single-zip-trust-tcp: one album, one ZIP).
 	filename := "photos.zip"
 	displayName := "photos.zip"
 
-	// Free 模式: 不做 HEIC 转换 / GPS 抹除 / Live Photo 拆分 / 智能重命名.
-	// 所有 Pro 选项恒为零值, 文件按原始字节 + 原始文件名 (safeZipName 保留目录结构) 打包.
+	// Free mode: no HEIC conversion / GPS stripping / Live Photo splitting / smart rename.
+	// All Pro options stay zero-valued; files are packed with original bytes +
+	// original filenames (safeZipName preserves directory structure).
 	zipOpts := ZipWriteOptions{
 		FlatMode:      flatMode,
 		SmartRename:   false,
 		LivePhotoMode: "preserve",
 	}
-	// single-zip-trust-tcp §1.2.6: manifest.json 写入 ZIP 尾部, 供 Free verify.js
-	// 读取 (size + SHA-256 校验). SessionID/BatchID 仅供客户端诊断关联.
+	// single-zip-trust-tcp §1.2.6: manifest.json is written at the ZIP tail for
+	// Free verify.js to read (size + SHA-256 verification). SessionID/BatchID
+	// are only for client-side diagnostic correlation.
 	zipOpts.EmitManifest = true
 	zipOpts.BatchID = batch.ID
 	zipOpts.SessionID = cheapUUID()
@@ -724,18 +731,21 @@ func (s *server) handleBatch(w http.ResponseWriter, r *http.Request) {
 	defer unregisterCancel(batch.ID)
 	// spec free-throughput: Free and Pro both run unthrottled. The legacy
 	// "Free 5MB/s to push Pro conversion" was Plan A (§5.1, abandoned) and
-	// contradicted §5.2 "不限速". throttleWriter is kept in archiver.go
+	// contradicted §5.2 "no throttling". throttleWriter is kept in archiver.go
 	// for a potential v2 user-selectable rate cap, but no caller wires it.
 	cw := &ctxWriter{w: w, ctx: ctx, cancel: cancel}
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, filename, url.PathEscape(displayName)))
 
-	// single-zip-trust-tcp §1: 中断 = 整个 ZIP 不完整, 必须重新下载.
-	// Accept-Ranges: none 明确告知 Chrome/Edge 不支持断点续传, 阻止浏览器在
-	// 下载中断后用 Range 请求续传 → 服务端返回 200 全量内容 → 浏览器当新下载.
-	// (根因: Edge/Chrome 默认开启自动续传, 服务端 cancelBatch 让 HTTP 响应中断,
-	// 浏览器用 Range 续传, 服务端忽略 Range 直接返回 200 → 看起来像新下载开始)
+	// single-zip-trust-tcp §1: interruption = the whole ZIP is incomplete and
+	// must be re-downloaded. Accept-Ranges: none explicitly tells Chrome/Edge
+	// that resume is unsupported, preventing the browser from issuing a Range
+	// request after an interrupted download → server returns 200 full content
+	// → browser treats it as a new download.
+	// (Root cause: Edge/Chrome enable auto-resume by default; server-side
+	// cancelBatch interrupts the HTTP response, the browser resumes with Range,
+	// the server ignores Range and returns 200 directly → looks like a new download)
 	w.Header().Set("Accept-Ranges", "none")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", zipSize))
 
@@ -773,8 +783,9 @@ func (s *server) handleBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleProgressPoll returns the current batch progress as a JSON snapshot.
-// 前端轮询端点 (替代 SSE 长连接): 每次 GET 返回当前 sent/total/done,
-// 避免 SSE 长连接在大文件下载并发下被 TCP send buffer 积压导致进度卡顿.
+// Front-end polling endpoint (replacing the SSE long connection): each GET
+// returns the current sent/total/done, avoiding SSE progress stalls caused by
+// TCP send buffer backlog under concurrent large-file downloads.
 func (s *server) handleProgressPoll(w http.ResponseWriter, r *http.Request) {
 	token := extractToken(r)
 	s.mu.RLock()
@@ -871,9 +882,11 @@ func (s *server) generateCompositeThumb(paths []string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// generateThumbTiles 生成每张源图的独立 cellSize×cellSize JPEG 缩略图,
-// 供 /api/thumb/{i}/{n} 单格加载. 与 generateCompositeThumb 的单格逻辑一致,
-// 但每张独立返回不合成, 让前端 grid 按容器宽度填满 (composite 只 1 张填不满).
+// generateThumbTiles generates an independent cellSize×cellSize JPEG thumbnail
+// per source image for /api/thumb/{i}/{n} per-cell loading. Same per-cell logic
+// as generateCompositeThumb, but each image is returned separately without
+// compositing, letting the front-end grid fill by container width (a composite
+// is only 1 image and cannot fill the grid).
 func (s *server) generateThumbTiles(paths []string) [][]byte {
 	var tiles [][]byte
 	for _, path := range paths {

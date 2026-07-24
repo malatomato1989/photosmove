@@ -1,6 +1,6 @@
 /* ============================================================
    PhotosMove UI — Modern dashboard layout
-   双栏布局 + 大字号 + 卡片化设计 + 微动效
+   Two-column layout + large type + card design + subtle motion
    ============================================================ */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -289,7 +289,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
     box-shadow: 0 4px 12px rgba(99,102,241,0.30);
 }
 
-/* 传输中状态: 按钮变红色警告色, 点击则取消传输 */
+/* Transferring state: button turns red warning color; clicking cancels the transfer */
 .btn-primary.downloading {
     background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
     box-shadow: 0 4px 12px rgba(239,68,68,0.35);
@@ -410,7 +410,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
     box-shadow: var(--shadow-sm);
 }
 
-/* Topbar 右侧: 状态 pill */
+/* Topbar right: status pill */
 .topbar-right {
     display: flex;
     align-items: center;
@@ -484,7 +484,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 }
 
 .card-title {
-    display: none; /* "相机拍摄"标题不需要, 隐藏; card-desc 保留显示文件数 */
+    display: none; /* "Camera roll" title not needed, hidden; card-desc still shows the file count */
     font-size: 1.75rem;
     font-weight: 800;
     color: var(--color-text);
@@ -640,7 +640,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 }
 
 /* ============================================================
-   ACTIONS ROW (下载 + 校验 一行)
+   ACTIONS ROW (download + verify on one row)
    ============================================================ */
 .actions-row {
     display: flex;
@@ -819,7 +819,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .console-box p.log-error   { color: #f87171; }
 .console-box p.log-primary { color: var(--color-primary-soft); font-weight: 500; }
 
-/* 全局隐私 footer (main-area 底部, 链向公开隐私政策) */
+/* Global privacy footer (bottom of main-area, links to the public privacy policy) */
 .privacy-footer {
     display: block;
     text-decoration: none;
@@ -839,7 +839,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
     color: #065f46;
 }
 
-/* 连接页隐私入口 (轻量链接, Play 合规: 应用内可访问) */
+/* Connect-page privacy entry (lightweight link, Play compliance: accessible in-app) */
 .privacy-link {
     display: block;
     margin-top: 18px;
@@ -959,7 +959,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
     border: 1px solid #fecaca;
 }
 
-/* 校验结果弹窗 (点遮罩或 Esc 关闭, 不占用 dashboard 空间) */
+/* Verify result modal (closed via mask click or Esc; takes no dashboard space) */
 .verify-modal-mask {
     position: fixed;
     inset: 0;

@@ -169,10 +169,12 @@ func (z zeroReader) Read(p []byte) (int, error) {
 
 // ZipWriteOptions controls how files are written into a ZIP archive.
 //
-// Free 路径只依赖 FlatMode + EmitManifest (+ SmartRename=false). 其余字段
-// (ConvertHeic/StripGps/StripExifCats/LivePhotoMode/SmartRename) 为历史 Pro
-// 钩子保留, Free 恒传零值 ("preserve" / false / nil), archiver 内对应分支
-// 已移除. 保留字段避免外部调用点大面积改动, 也便于将来 Pro 复用.
+// The Free path only relies on FlatMode + EmitManifest (+ SmartRename=false).
+// The remaining fields (ConvertHeic/StripGps/StripExifCats/LivePhotoMode/
+// SmartRename) are retained as legacy Pro hooks; Free always passes zero
+// values ("preserve" / false / nil), and the corresponding archiver branches
+// have been removed. Keeping the fields avoids touching external call sites
+// en masse and eases future Pro reuse.
 type ZipWriteOptions struct {
 	ConvertHeic   bool
 	FlatMode      bool
@@ -264,15 +266,15 @@ func planSingleBatch(files []FileEntry, opts BatchOpts) *Batch {
 // calculateZipSize computes the byte size of the ZIP archive by dry-running
 // zip.Writer with zero data. For HEIC files with convertHeic enabled, uses a
 // 5x size estimate (HEIC→JPEG typically expands ~1.5-2.5x; 5x gives generous
-// margin to prevent actual > Content-Length → HTTP truncation → 损坏 ZIP).
+// margin to prevent actual > Content-Length → HTTP truncation → corrupted ZIP).
 // Excess estimate is back-filled as trailing zeros by padToZipSize (verify.js
-// 用流式扫描能跨越 padding 找到 EOCD).
+// uses streaming scans that can skip past the padding to find the EOCD).
 //
 // When opts.EmitManifest is set, the returned size also accounts for the
 // manifest.json tail entry: reserved payload bytes (storage.ManifestReservedSize)
 // plus the ZIP local-file-header overhead (~64 bytes conservative budget for
 // the "manifest.json" filename + fixed 30-byte LFH + data descriptor). This
-// keeps Content-Length exact (铁律 2) so the browser shows a progress bar.
+// keeps Content-Length exact (iron rule 2) so the browser shows a progress bar.
 // calculateZipSize computes the exact final ZIP size with a math formula —
 // O(num files), NO CRC32 over file contents. Byte constants mirror what
 // archive/zip's Writer actually emits (struct.go + writer.go):
@@ -355,8 +357,9 @@ func calculateZipSizeLegacy(files []FileEntry, opts ZipWriteOptions) int64 {
 	zw := zip.NewWriter(cw)
 	seen := make(map[string]int)
 	for _, f := range files {
-		// Free 路径: 保留原始文件名 (SmartRename=false) 或扁平化 (FlatMode=true).
-		// 不做 HEIC 转换 / Live Photo 拆分 — 文件按原字节原样计入大小估算.
+		// Free path: keep original filenames (SmartRename=false) or flatten
+		// (FlatMode=true). No HEIC conversion / Live Photo splitting — files
+		// are counted by their original bytes in the size estimate.
 		name := safeZipName(f.Path)
 		if opts.FlatMode {
 			name = dedupName(flatZipName(f.Path), seen)
@@ -379,11 +382,12 @@ func calculateZipSizeLegacy(files []FileEntry, opts ZipWriteOptions) int64 {
 	size := cw.n
 
 	if opts.EmitManifest {
-		// manifest.json 的 ZIP 开销 = local file header (~65: 30 固定 + 13 文件名
-		// + extra/data descriptor) + central directory record (~46 + 13 文件名).
-		// 大归档 (>4GB) 时该中央目录记录还会带 zip64 extra (~28), 总计可达 ~165.
-		// 取 256 作为安全上界, 多出部分由 padToZipSize 补零 (远小于 EOCD 64KB
-		// 回扫窗口, 不影响 Windows/7-Zip 解压).
+		// ZIP overhead of manifest.json = local file header (~65: 30 fixed + 13
+		// filename + extra/data descriptor) + central directory record (~46 + 13
+		// filename). For large archives (>4GB) that central record also carries a
+		// zip64 extra (~28), totaling up to ~165. 256 is used as a safe upper
+		// bound; the excess is zero-padded by padToZipSize (far smaller than the
+		// EOCD 64KB back-scan window, so Windows/7-Zip extraction is unaffected).
 		manifestPayload := storage.ManifestReservedSize(len(files))
 		manifestEntryOverhead := int64(256)
 		size += manifestPayload + manifestEntryOverhead
@@ -543,8 +547,9 @@ func writeBatchZip(w io.Writer, batch *Batch, mediaPort int, zipSize int64, opts
 	// budget so Content-Length (declared by calculateZipSize) stays exact.
 	// Free + Pro both emit (single-zip-trust-tcp §1.2.6: verify.js is a free
 	// tool that reads the manifest).
-	// Method=Store (与其他 entry 一致): verify.js readZipEntry 只支持 Store,
-	// Deflate 默认会让前端拿到压缩流而非 JSON, 导致 verify 失败.
+	// Method=Store (consistent with other entries): verify.js readZipEntry only
+	// supports Store; Deflate by default would hand the front-end a compressed
+	// stream instead of JSON, causing verify to fail.
 	if opts.EmitManifest {
 		mh := &zip.FileHeader{
 			Name:   "manifest.json",
@@ -607,9 +612,10 @@ func dedupName(base string, seen map[string]int) string {
 // the path, size, and SHA-256 of the bytes written so callers (writeBatchZip)
 // can append a manifest.json tail entry for Free verify.js integrity checks.
 //
-// Free 路径: 保留原始文件名 (SmartRename=false) 或扁平化 (FlatMode=true),
-// 原字节原样写入 (不转 HEIC / 不抹 EXIF / 不拆 Live Photo). SHA-256 经
-// MultiWriter 流式计算, 供 verify.js 字节级校验.
+// Free path: keep original filenames (SmartRename=false) or flatten
+// (FlatMode=true); original bytes are written as-is (no HEIC conversion /
+// no EXIF stripping / no Live Photo splitting). SHA-256 is computed
+// streaming via MultiWriter for verify.js byte-level checks.
 func writeFileToZip(zw *zip.Writer, f FileEntry, mediaPort int, opts ZipWriteOptions, seen map[string]int, ctx context.Context) (storage.ManifestEntry, error) {
 	zipName := safeZipName(f.Path)
 	if opts.FlatMode {

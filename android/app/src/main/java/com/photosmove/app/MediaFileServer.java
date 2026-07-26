@@ -1,4 +1,4 @@
-package com.photosmove;
+package com.photosmove.app;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;

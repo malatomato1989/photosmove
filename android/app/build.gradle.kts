@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.photosmove"
+    namespace = "com.photosmove.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.photosmove"
+        applicationId = "com.photosmove.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 2   // Increment manually, +1 per release

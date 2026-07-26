@@ -1,4 +1,4 @@
-package com.photosmove;
+package com.photosmove.app;
 
 import android.Manifest;
 import android.app.Activity;

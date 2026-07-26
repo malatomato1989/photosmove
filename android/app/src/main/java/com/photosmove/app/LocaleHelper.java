@@ -1,4 +1,4 @@
-package com.photosmove;
+package com.photosmove.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;

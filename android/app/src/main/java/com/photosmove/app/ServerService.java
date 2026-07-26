@@ -1,4 +1,4 @@
-package com.photosmove;
+package com.photosmove.app;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -38,7 +38,7 @@ public class ServerService extends Service {
     private static final int NOTIFICATION_ID = 1;
 
     // Broadcast action and keys
-    public static final String ACTION_UPDATE = "com.photosmove.UPDATE";
+    public static final String ACTION_UPDATE = "com.photosmove.app.UPDATE";
     public static final String EXTRA_STATUS = "status";
     public static final String EXTRA_PIN = "pin";
     public static final String EXTRA_URL = "url";

@@ -6,6 +6,10 @@
 
 PhotosMove is a **one-click** photo & video migration tool: move 100,000+ files / 100GB+ byte-for-byte from your phone to your computer in a single tap. Whether you call it migration, backup, export, or just "get my photos off my phone onto the computer" — if you want it lossless and off the cloud, PhotosMove does it.
 
+## Demo
+
+📺 [Watch demo video](https://github.com/malatomato1989/photosmove/blob/main/store/promo-video.mp4)
+
 ## Why PhotosMove?
 
 Most "photo transfer" apps compress, transcode, or need the cloud + an installed client. PhotosMove is different:

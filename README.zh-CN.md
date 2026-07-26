@@ -6,6 +6,10 @@
 
 PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 10 万张 / 100GB+ 的文件字节级原样从手机搬到电脑。不管你叫它迁移、备份、导出，还是"把手机照片传到电脑上"——只要你要无损、不联网，PhotosMove 都能搞定。
 
+## 演示
+
+📺 [观看演示视频](https://github.com/malatomato1989/photosmove/blob/main/store/promo-video.mp4)
+
 ## 为什么选 PhotosMove？
 
 大多数"传照片"应用会压缩、转码，或依赖云 + 安装客户端。PhotosMove 不一样：

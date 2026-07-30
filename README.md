@@ -24,7 +24,23 @@ Most "photo transfer" apps compress, transcode, or need the cloud + an installed
 
 ## How it works
 
-Phone runs an HTTP server (Go + Android foreground service) → PC browser connects over LAN → enter the PIN shown on the phone → pick albums → download a single streaming ZIP via browser native download → SSE tracks progress.
+Phone runs an HTTP server (Go + Android foreground service) → PC browser connects over LAN → enter the PIN shown on the phone → pick albums → download a single streaming ZIP via browser native download → HTTP polling tracks progress.
+
+## Screenshots
+
+<p align="center">
+  <img src="store/screenshots/04-app-running-en.png" alt="App running" width="32%">
+  &nbsp;
+  <img src="store/screenshots/02-web-pin-en.png" alt="PIN auth" width="32%">
+  &nbsp;
+  <img src="store/screenshots/03-web-connect-en.png" alt="Album selection" width="32%">
+</p>
+
+<p align="center">
+  <img src="store/screenshots/04-web-download-en.png" alt="Downloading" width="48%">
+  &nbsp;
+  <img src="store/screenshots/05-web-verify-en.png" alt="Integrity check" width="48%">
+</p>
 
 ## Compared to alternatives
 

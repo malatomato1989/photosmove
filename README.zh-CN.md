@@ -24,7 +24,23 @@ PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 10 �
 
 ## 工作原理
 
-手机运行 HTTP 服务（Go + Android 前台服务）→ PC 浏览器通过局域网连接 → 输入手机显示的 PIN → 选择相册 → 浏览器原生下载单个流式 ZIP → SSE 实时追踪进度。
+手机运行 HTTP 服务（Go + Android 前台服务）→ PC 浏览器通过局域网连接 → 输入手机显示的 PIN → 选择相册 → 浏览器原生下载单个流式 ZIP → HTTP 轮询实时追踪进度。
+
+## 截图
+
+<p align="center">
+  <img src="store/screenshots/01-main-running-zh.png" alt="App 运行" width="32%">
+  &nbsp;
+  <img src="store/screenshots/02-web-pin-zh.png" alt="PIN 验证" width="32%">
+  &nbsp;
+  <img src="store/screenshots/02-web-connect-zh.png" alt="选择相册" width="32%">
+</p>
+
+<p align="center">
+  <img src="store/screenshots/04-web-download-zh.png" alt="下载中" width="48%">
+  &nbsp;
+  <img src="store/screenshots/05-web-verify-zh.png" alt="校验结果" width="48%">
+</p>
 
 ## 与同类工具对比
 

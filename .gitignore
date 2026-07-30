@@ -50,6 +50,7 @@ Plan.md
 *.png
 !android/app/src/main/res/mipmap-*/*.png
 !web/logo.png
+!store/screenshots/*.png
 demo.png
 e.png
 thumb_test.jpg

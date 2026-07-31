@@ -40,11 +40,15 @@ Phone runs an HTTP server (Go + Android foreground service) → PC browser conne
   <img src="store/screenshots/02-web-pin-en.png?v=3" alt="PIN auth" height="430">
 </p>
 
-**Download and verify** — streaming ZIP, then SHA-256 check:
+**Download** — one streaming ZIP via browser native download:
 
 <p align="center">
   <img src="store/screenshots/04-web-download-en.png?v=3" alt="Downloading" height="430">
-  &nbsp;
+</p>
+
+**Verify** — SHA-256 integrity check, runs locally in the browser:
+
+<p align="center">
   <img src="store/screenshots/05-web-verify-en.png?v=3" alt="Integrity check" height="430">
 </p>
 

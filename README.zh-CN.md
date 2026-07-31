@@ -40,11 +40,15 @@ PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 10 �
   <img src="store/screenshots/02-web-pin-zh.png?v=3" alt="PIN 验证" height="430">
 </p>
 
-**下载与校验** —— 流式 ZIP 下载，SHA-256 校验：
+**下载** —— 单个流式 ZIP 浏览器原生下载：
 
 <p align="center">
   <img src="store/screenshots/04-web-download-zh.png?v=3" alt="下载中" height="430">
-  &nbsp;
+</p>
+
+**校验** —— SHA-256 完整性校验，浏览器本地运行：
+
+<p align="center">
   <img src="store/screenshots/05-web-verify-zh.png?v=3" alt="校验结果" height="430">
 </p>
 

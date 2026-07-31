@@ -34,12 +34,10 @@ Phone runs an HTTP server (Go + Android foreground service) → PC browser conne
   <img src="store/screenshots/04-app-running-en.png" alt="App running on phone" height="520">
 </p>
 
-**In the browser** — connect, enter the PIN, pick albums:
+**In the browser** — connect and enter the PIN:
 
 <p align="center">
   <img src="store/screenshots/02-web-pin-en.png" alt="PIN auth" height="430">
-  &nbsp;
-  <img src="store/screenshots/03-web-connect-en.png" alt="Album selection" height="430">
 </p>
 
 **Download and verify** — streaming ZIP, then SHA-256 check:

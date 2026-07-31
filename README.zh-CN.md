@@ -34,12 +34,10 @@ PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 10 �
   <img src="store/screenshots/01-main-running-zh.png" alt="App 运行" height="520">
 </p>
 
-**浏览器端** —— 连接、输入 PIN、选择相册：
+**浏览器端** —— 连接并输入 PIN：
 
 <p align="center">
   <img src="store/screenshots/02-web-pin-zh.png" alt="PIN 验证" height="430">
-  &nbsp;
-  <img src="store/screenshots/02-web-connect-zh.png" alt="选择相册" height="430">
 </p>
 
 **下载与校验** —— 流式 ZIP 下载，SHA-256 校验：

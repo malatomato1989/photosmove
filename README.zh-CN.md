@@ -31,21 +31,21 @@ PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 10 �
 **手机端** —— 一键启动服务：
 
 <p align="center">
-  <img src="store/screenshots/01-main-running-zh.png" alt="App 运行" height="520">
+  <img src="store/screenshots/01-main-running-zh.png?v=2" alt="App 运行" height="520">
 </p>
 
 **浏览器端** —— 连接并输入 PIN：
 
 <p align="center">
-  <img src="store/screenshots/02-web-pin-zh.png" alt="PIN 验证" height="430">
+  <img src="store/screenshots/02-web-pin-zh.png?v=2" alt="PIN 验证" height="430">
 </p>
 
 **下载与校验** —— 流式 ZIP 下载，SHA-256 校验：
 
 <p align="center">
-  <img src="store/screenshots/04-web-download-zh.png" alt="下载中" height="430">
+  <img src="store/screenshots/04-web-download-zh.png?v=2" alt="下载中" height="430">
   &nbsp;
-  <img src="store/screenshots/05-web-verify-zh.png" alt="校验结果" height="430">
+  <img src="store/screenshots/05-web-verify-zh.png?v=2" alt="校验结果" height="430">
 </p>
 
 ## 与同类工具对比

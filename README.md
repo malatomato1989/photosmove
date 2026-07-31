@@ -28,18 +28,26 @@ Phone runs an HTTP server (Go + Android foreground service) → PC browser conne
 
 ## Screenshots
 
-<p align="center">
-  <img src="store/screenshots/04-app-running-en.png" alt="App running" width="32%">
-  &nbsp;
-  <img src="store/screenshots/02-web-pin-en.png" alt="PIN auth" width="32%">
-  &nbsp;
-  <img src="store/screenshots/03-web-connect-en.png" alt="Album selection" width="32%">
-</p>
+**On the phone** — start the server with one tap:
 
 <p align="center">
-  <img src="store/screenshots/04-web-download-en.png" alt="Downloading" width="48%">
+  <img src="store/screenshots/04-app-running-en.png" alt="App running on phone" height="520">
+</p>
+
+**In the browser** — connect, enter the PIN, pick albums:
+
+<p align="center">
+  <img src="store/screenshots/02-web-pin-en.png" alt="PIN auth" height="430">
   &nbsp;
-  <img src="store/screenshots/05-web-verify-en.png" alt="Integrity check" width="48%">
+  <img src="store/screenshots/03-web-connect-en.png" alt="Album selection" height="430">
+</p>
+
+**Download and verify** — streaming ZIP, then SHA-256 check:
+
+<p align="center">
+  <img src="store/screenshots/04-web-download-en.png" alt="Downloading" height="430">
+  &nbsp;
+  <img src="store/screenshots/05-web-verify-en.png" alt="Integrity check" height="430">
 </p>
 
 ## Compared to alternatives

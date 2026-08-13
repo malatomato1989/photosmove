@@ -183,6 +183,10 @@
         if (window.photosmoveVerify && typeof window.photosmoveVerify.rerender === 'function') {
             window.photosmoveVerify.rerender();
         }
+
+        // Transfer log entries (no data-i18n): re-render all stored entries from the new locale,
+        // otherwise log lines produced before the switch keep their old language.
+        renderAllLogs();
     }
 
     function onLocaleChange() {
@@ -255,7 +259,7 @@
     async function showDashboard() {
         connectView.classList.add('hidden');
         dashboardView.classList.remove('hidden');
-        appendLog(I18N.t('service_ready'));
+        appendLog('service_ready');
         await loadAlbums();
         updateCard();
     }
@@ -269,7 +273,7 @@
             const data = await res.json();
             cachedAlbums = data.albums;
         } catch (err) {
-            appendLog(I18N.t('load_failed', { msg: err.message }), 'error');
+            appendLog('load_failed', { msg: err.message }, 'error');
         }
     }
 
@@ -383,7 +387,7 @@
         refreshProgressText();
         progressAlbum.textContent = '';
 
-        appendLog(I18N.t('transfer_start', { count: albumPaths.length }), 'primary');
+        appendLog('transfer_start', { count: albumPaths.length }, 'primary');
 
         try {
             const selectRes = await fetch(`${serverUrl}/api/select`, {
@@ -411,7 +415,7 @@
             if (batches.length === 0) {
                 downloading = false;
                 btnDownload.disabled = false;
-                appendLog(I18N.t('no_files_to_download'), 'warning');
+                appendLog('no_files_to_download', null, 'warning');
                 updateCard();
                 return;
             }
@@ -429,7 +433,7 @@
                 if (myGen !== dlGeneration) return;
 
                 const batch = batches[i];
-                appendLog(I18N.t('batch_progress', { i: i + 1, n: batches.length, name: batch.album_name, size: formatSize(batch.total_size) }));
+                appendLog('batch_progress', { i: i + 1, n: batches.length, name: batch.album_name, size: formatSize(batch.total_size) });
 
                 const ok = await downloadOneBatch(batch, i, batches.length, totalDownloaded, totalSize, t0);
                 if (myGen !== dlGeneration) return;
@@ -452,14 +456,14 @@
                 const avgSpeed = totalSize / parseFloat(elapsed);
                 const filesInDone = batches.slice(0, downloadedBatches)
                     .reduce((s, b) => s + (b.file_count || 0), 0);
-                appendLog(I18N.t('all_done', { files: filesInDone, size: formatSize(totalDownloaded), elapsed: elapsed, speed: formatSize(avgSpeed) }), 'success');
+                appendLog('all_done', { files: filesInDone, size: formatSize(totalDownloaded), elapsed: elapsed, speed: formatSize(avgSpeed) }, 'success');
                 finishDownload(true);
             } else {
                 showCancelled();
             }
         } catch (err) {
             if (myGen !== dlGeneration) return;
-            appendLog(I18N.t('download_failed', { msg: err.message }), 'error');
+            appendLog('download_failed', { msg: err.message }, 'error');
             btnDownload.classList.remove('downloading');
             finishDownload(false);
         }
@@ -526,7 +530,7 @@
                     lastMsg = Date.now();
                     if (pollInterrupted) {
                         pollInterrupted = false;
-                        appendLog(I18N.t('poll_resumed', { name: batch.album_name }), 'success');
+                        appendLog('poll_resumed', { name: batch.album_name }, 'success');
                     }
                     applyProgress(data);
                     if (data.cancelled) {
@@ -534,7 +538,7 @@
                         currentBatchId = null;
                         completed = true;
                         clearBigFileBatch();
-                        appendLog(I18N.t('batch_cancelled', { name: batch.album_name }), 'warning');
+                        appendLog('batch_cancelled', { name: batch.album_name }, 'warning');
                         resolve(false);
                         return;
                     }
@@ -544,7 +548,7 @@
                         completed = true;
                         clearBigFileBatch();
                         const batchElapsed = ((Date.now() - batchStartTime) / 1000).toFixed(1);
-                        appendLog(I18N.t('batch_done', { name: batch.album_name, size: formatSize(batch.total_size), elapsed: batchElapsed }), 'success');
+                        appendLog('batch_done', { name: batch.album_name, size: formatSize(batch.total_size), elapsed: batchElapsed }, 'success');
                         resolve(true);
                         return;
                     }
@@ -559,8 +563,8 @@
                 if (gen !== dlGeneration) { clearInterval(watchdog); clearInterval(pollTimer); resolve(false); return; }
                 if (Date.now() - lastMsg > 30000 && !pollInterrupted) {
                     pollInterrupted = true;
-                    appendLog(I18N.t('poll_timeout', { name: batch.album_name }), 'warning');
-                    appendLog(I18N.t('poll_check_downloader'), 'info');
+                    appendLog('poll_timeout', { name: batch.album_name }, 'warning');
+                    appendLog('poll_check_downloader', null, 'info');
                     dlState.mode = 'interrupted';
                     refreshProgressText();
                 }
@@ -576,7 +580,7 @@
                         currentBatchId = null;
                         completed = true;
                         clearBigFileBatch();
-                        appendLog(I18N.t('batch_bigfile_cancelled', { name: batch.album_name }), 'warning');
+                        appendLog('batch_bigfile_cancelled', { name: batch.album_name }, 'warning');
                         resolve(false);
                         return;
                     }
@@ -615,7 +619,7 @@
                         blob
                     );
                     if (!sent) {
-                        appendLog(I18N.t('cancel_not_sent'), 'warning');
+                        appendLog('cancel_not_sent', null, 'warning');
                     }
                 });
         }
@@ -623,7 +627,7 @@
         progressSection.classList.add('hidden');
         doneBadge.classList.add('hidden');
         showCancelled();
-        appendLog(I18N.t('cancelled_notice'), 'info');
+        appendLog('cancelled_notice', null, 'info');
         btnDownload.disabled = true;
         setTimeout(() => { btnDownload.disabled = false; }, 1500);
     }
@@ -673,26 +677,52 @@
         consoleToggle.classList.toggle('open');
     });
 
-    function appendLog(text, type) {
-        type = type || 'info';
-        const container = document.getElementById('live-logs');
+    // Log entries are stored as {key, params, type, ts} and re-rendered from the current locale
+    // on language switch, so the Transfer log never lingers in a stale language (mixed-language
+    // log lines after switching to English). ts is kept as epoch so the timestamp follows the
+    // locale too.
+    const logStore = [];
+    const LOG_CLASS = {
+        info: 'log-info',
+        success: 'log-success',
+        warning: 'log-warning',
+        error: 'log-error',
+        primary: 'log-primary',
+    };
+
+    function logLocale() {
+        return I18N.getLocale() === 'zh' ? 'zh-CN' : 'en-US';
+    }
+
+    function renderLogEntry(entry) {
         const p = document.createElement('p');
-        const ts = new Date().toLocaleTimeString(I18N.getLocale() === 'zh' ? 'zh-CN' : 'en-US', { hour12: false });
-        const classMap = {
-            info: 'log-info',
-            success: 'log-success',
-            warning: 'log-warning',
-            error: 'log-error',
-            primary: 'log-primary',
-        };
-        p.className = classMap[type] || 'log-info';
-        p.textContent = ts + ' ' + text;
-        container.appendChild(p);
+        p.className = LOG_CLASS[entry.type] || 'log-info';
+        const ts = new Date(entry.ts).toLocaleTimeString(logLocale(), { hour12: false });
+        p.textContent = ts + ' ' + I18N.t(entry.key, entry.params);
+        return p;
+    }
+
+    function appendLog(key, params, type) {
+        // Allow appendLog(key, type) where params is omitted.
+        if (typeof params === 'string') { type = params; params = null; }
+        type = type || 'info';
+        const entry = { key: key, params: params || {}, type: type, ts: Date.now() };
+        logStore.push(entry);
+        if (logStore.length > 500) logStore.shift();
+        const container = document.getElementById('live-logs');
+        container.appendChild(renderLogEntry(entry));
         while (container.children.length > 500) {
             container.removeChild(container.firstChild);
         }
         consoleBox.scrollTop = consoleBox.scrollHeight;
-        return p;
+        return entry;
+    }
+
+    function renderAllLogs() {
+        const container = document.getElementById('live-logs');
+        container.innerHTML = '';
+        for (const entry of logStore) container.appendChild(renderLogEntry(entry));
+        consoleBox.scrollTop = consoleBox.scrollHeight;
     }
 
     // --- Helpers ---

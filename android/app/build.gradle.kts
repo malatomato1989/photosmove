@@ -15,7 +15,7 @@ android {
         applicationId = "com.photosmove.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2   // Increment manually, +1 per release
+        versionCode = 3   // Increment manually, +1 per release
         versionName = appVersion
         ndk { abiFilters += "arm64-v8a" }
         buildConfigField("String", "VERSION", "\"$appVersion\"")

@@ -83,24 +83,33 @@ func generateToken() string {
 }
 
 func getLANIP() string {
-	// Most reliable: net.Dial udp to an external address; LocalAddr is the
-	// local egress IP. No packets are actually sent, only the routing table is
-	// consulted; on Android/gomobile this is more robust than enumerating
-	// net.InterfaceAddrs (the latter fails to get the wlan0 address on some
-	// Android versions → falsely reports localhost, and the PC cannot connect).
+	// Default-route egress IP via a UDP "dial" to an external address: no packet is sent, only
+	// the routing table is consulted, and LocalAddr is the local egress IP. This is the most
+	// robust option on Android/gomobile (enumerating net.InterfaceAddrs sometimes misses wlan0
+	// on certain Android versions → falsely reports localhost, and the PC cannot connect).
+	// Caveat: it follows the default route, so an always-on VPN's tun address may be returned.
+	// ServerService.getWifiIP filters by TRANSPORT_WIFI and passes -lan-ip, so this runs only
+	// when the Java side detects no Wi-Fi address.
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err == nil {
 		defer conn.Close()
-		if addr, ok := conn.LocalAddr().(*net.UDPAddr); ok && addr.IP.To4() != nil {
+		// Require a private/site-local address: on cellular or an always-on VPN the default-route
+		// egress is a public or CGNAT (100.64/10) IP that a PC on the Wi-Fi can never reach;
+		// surfacing it would mislead the user. Fall through to interface enumeration / 0.0.0.0.
+		if addr, ok := conn.LocalAddr().(*net.UDPAddr); ok && addr.IP.To4() != nil && addr.IP.IsPrivate() {
 			return addr.IP.String()
 		}
 	}
-	// fallback: interface enumeration
+	// Fallback: interface enumeration — prefer a private/site-local IPv4 (10/8, 172.16/12,
+	// 192.168/16) and skip loopback/public addresses, so we do not surface a mobile-data or
+	// virtual interface address that a PC on the Wi-Fi could never reach.
 	addrs, err := net.InterfaceAddrs()
 	if err == nil {
 		for _, addr := range addrs {
 			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
+				if ipnet.IP.IsPrivate() {
+					return ipnet.IP.String()
+				}
 			}
 		}
 	}

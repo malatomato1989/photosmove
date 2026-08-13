@@ -182,17 +182,17 @@ public class ServerService extends Service {
 
     @SuppressWarnings("deprecation")
     private String getWifiIP() {
-        // Prefer ConnectivityManager.getLinkProperties (modern API, Android 6+).
-        // WifiManager.getConnectionInfo().getIpAddress() is unreliable on Android 12+ (returns 0).
+        // Enumerate all networks and pick the IPv4 on a Wi-Fi transport. Do NOT use
+        // getActiveNetwork(): when a VPN / mobile data / virtual interface is the system
+        // default it returns that interface's address (e.g. 10.x), which is not on the Wi-Fi
+        // segment and misleads the PC client. WifiManager.getIpAddress() is unreliable on
+        // Android 12+ (returns 0) and is kept only as a last resort.
         try {
             ConnectivityManager cm = (ConnectivityManager)
                     getApplicationContext().getSystemService(CONNECTIVITY_SERVICE);
             if (cm != null) {
-                Network active = cm.getActiveNetwork();
-                if (active != null) {
-                    String ip = extractIpv4(cm.getLinkProperties(active));
-                    if (ip != null) return ip;
-                }
+                String ip = wifiIPv4(cm);
+                if (ip != null) return ip;
             }
         } catch (Exception e) {
             Log.e(TAG, "getWifiIP (ConnectivityManager) failed", e);
@@ -225,6 +225,22 @@ public class ServerService extends Service {
         return null;
     }
 
+    // Find the IPv4 of a Wi-Fi network by iterating all networks (not getActiveNetwork) and
+    // requiring TRANSPORT_WIFI while excluding TRANSPORT_VPN, so a VPN-over-WiFi setup does not
+    // return the tun interface's address. Shared by getWifiIP and the initial NetworkCallback
+    // check so cold start and Wi-Fi refresh use one consistent source of truth.
+    private String wifiIPv4(ConnectivityManager cm) {
+        for (Network network : cm.getAllNetworks()) {
+            NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+            if (caps == null) continue;
+            if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) continue;
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
+            String ip = extractIpv4(cm.getLinkProperties(network));
+            if (ip != null) return ip;
+        }
+        return null;
+    }
+
     // Register a NetworkCallback listening for WiFi connect/disconnect to auto-update the URL (no app restart needed).
     // Callbacks fire on a system binder thread; broadcast/updateNotification are thread-safe.
     private void registerWifiCallback() {
@@ -241,6 +257,15 @@ public class ServerService extends Service {
                     .build();
 
             networkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    // Some ROMs fire onAvailable but never re-fire onLinkPropertiesChanged for a
+                    // Wi-Fi that was already connected at register time. Pull LinkProperties
+                    // explicitly so the URL is captured as early as possible.
+                    LinkProperties lp = cm.getLinkProperties(network);
+                    if (lp != null) onLinkPropertiesChanged(network, lp);
+                }
+
                 @Override
                 public void onLinkPropertiesChanged(Network network, LinkProperties lp) {
                     String ip = extractIpv4(lp);
@@ -265,24 +290,22 @@ public class ServerService extends Service {
 
             cm.registerNetworkCallback(req, networkCallback);
 
-            // Initial check: if there is no active WiFi (or no IPv4), show wifi_required immediately.
-            // (If WiFi is already connected, onLinkPropertiesChanged fires shortly and broadcasts the real URL.)
-            Network active = cm.getActiveNetwork();
-            boolean hasWifi = false;
-            if (active != null) {
-                NetworkCapabilities caps = cm.getNetworkCapabilities(active);
-                if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                    if (extractIpv4(cm.getLinkProperties(active)) != null) {
-                        hasWifi = true;
-                    }
-                }
-            }
-            if (!hasWifi) {
+            // Initial check: if Wi-Fi is already connected, broadcast its real URL immediately
+            // instead of only flipping a boolean and waiting for onLinkPropertiesChanged (which
+            // is not guaranteed to re-fire for an already-connected network on every ROM — that
+            // left the cold-start URL stuck on a wrong/0.0.0.0 value). If no Wi-Fi, prompt.
+            String initialIp = wifiIPv4(cm);
+            if (initialIp != null) {
+                wifiConnected = true;
+                String url = "http://" + initialIp + ":8080";
+                Log.i(TAG, "WiFi IP (initial): " + initialIp);
+                detectedUrl = url;
+                broadcast("running", detectedPin, url);
+                updateNotification(url);
+            } else {
                 Log.i(TAG, "No active WiFi at startup → wifi_required");
                 broadcast("wifi_required", null, null);
                 updateNotification(localizedCtx.getString(R.string.notif_wifi_required));
-            } else {
-                wifiConnected = true;
             }
         } catch (Exception e) {
             Log.e(TAG, "registerNetworkCallback failed", e);
@@ -464,10 +487,11 @@ public class ServerService extends Service {
                     if (idx >= 0) {
                         detectedUrl = line.substring(idx);
                     }
-                    // Go prints 0.0.0.0 when WiFi is not connected — in that case do not
-                    // broadcast a running URL; the NetworkCallback handles the wifi_required
-                    // prompt / real URL update.
-                    if (!detectedUrl.contains("0.0.0.0")) {
+                    // Only trust Go's URL when Wi-Fi is actually connected. Without Wi-Fi, Go's
+                    // getLANIP follows the default route and may print a cellular/VPN egress IP
+                    // (not 0.0.0.0) that a PC cannot reach — broadcasting it would flip the UI
+                    // from the correct wifi_required prompt to a misleading running URL.
+                    if (!detectedUrl.contains("0.0.0.0") && wifiConnected) {
                         broadcast("running", detectedPin, detectedUrl);
                     }
                 }

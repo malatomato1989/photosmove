@@ -241,11 +241,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Returning to the foreground must re-sync the UI from the running Service. A recreated
-        // Activity that skipped the normal start path (e.g. process killed while the foreground
-        // Service survived, or after a permission revoke/regrant cycle) would otherwise stay
-        // stuck on "Starting service…" until a full app restart.
         if (hasStoragePermission()) {
+            // Returning from the system permission settings with the permission now granted: that
+            // path does NOT fire onRequestPermissionsResult (only the in-app dialog does), so the
+            // permBtn is still visible from the authorization screen — start the server here,
+            // otherwise the UI stays on "Grant storage permission" despite the permission being held.
+            if (permBtn.getVisibility() == View.VISIBLE) {
+                startServer();
+            }
+            // Re-sync uptime/URL/PIN from the running Service (survives Activity recreation).
             restoreState();
         }
     }

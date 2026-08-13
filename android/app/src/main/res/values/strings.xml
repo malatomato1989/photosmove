@@ -35,6 +35,8 @@
     <string name="btn_copy">Copy</string>
     <string name="btn_copy_done">Copied</string>
     <string name="btn_grant_permission">Grant storage permission</string>
+    <string name="perm_required_message">PhotosMove needs access to Photos and videos to read the photos for transfer. Please grant it under Settings → Permissions.</string>
+    <string name="perm_settings_open">Open Settings</string>
 
     <!-- Privacy (Play compliance: in-app privacy policy entry, opens in system browser) -->
     <string name="privacy_policy">Privacy Policy</string>

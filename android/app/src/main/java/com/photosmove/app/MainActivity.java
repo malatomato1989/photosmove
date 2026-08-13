@@ -9,12 +9,14 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ProgressBar;
@@ -45,6 +47,9 @@ public class MainActivity extends Activity {
 
     private String currentPin = "";
     private String currentUrl = "";
+
+    private static final String PREFS_NAME = "photosmove_prefs";
+    private static final String KEY_ASKED_STORAGE = "asked_storage_perm";
 
     private Handler durationHandler;
     private long serverStartTime = 0;
@@ -77,7 +82,7 @@ public class MainActivity extends Activity {
                     case "running":
                         statusText.setText(R.string.status_running);
                         statusDot.setBackgroundResource(R.drawable.status_dot_running);
-                        serverStartTime = System.currentTimeMillis();
+                        syncServerStartTime();
                         durationText.setVisibility(View.VISIBLE);
                         durationHandler.removeCallbacks(durationUpdater);
                         durationHandler.post(durationUpdater);
@@ -234,6 +239,18 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        // Returning to the foreground must re-sync the UI from the running Service. A recreated
+        // Activity that skipped the normal start path (e.g. process killed while the foreground
+        // Service survived, or after a permission revoke/regrant cycle) would otherwise stay
+        // stuck on "Starting service…" until a full app restart.
+        if (hasStoragePermission()) {
+            restoreState();
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         durationHandler.removeCallbacks(durationUpdater);
@@ -262,7 +279,7 @@ public class MainActivity extends Activity {
                 statusText.setText(R.string.status_running);
                 statusDot.setBackgroundResource(R.drawable.status_dot_running);
                 durationText.setVisibility(View.VISIBLE);
-                serverStartTime = System.currentTimeMillis();
+                syncServerStartTime();
                 durationHandler.removeCallbacks(durationUpdater);
                 durationHandler.post(durationUpdater);
                 wifiHint.setVisibility(View.VISIBLE);
@@ -296,6 +313,14 @@ public class MainActivity extends Activity {
             btn.setText(original);
             btn.setEnabled(true);
         }, 1500);
+    }
+
+    // Derive the uptime origin from the Service's real start epoch so the counter survives
+    // Activity recreation (the system can reclaim the task while the foreground Service runs) —
+    // otherwise returning to the foreground restarts the uptime from 0.
+    private void syncServerStartTime() {
+        long s = ServerService.getLastStartEpoch();
+        serverStartTime = (s > 0) ? s : System.currentTimeMillis();
     }
 
     private String formatDuration(long seconds) {
@@ -373,7 +398,47 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33) {
             perms.add(Manifest.permission.POST_NOTIFICATIONS);
         }
+
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        boolean askedBefore = prefs.getBoolean(KEY_ASKED_STORAGE, false);
+        // After the first ask, if the system will no longer show the permission dialog (the user
+        // picked "Don't ask again", or — on some ROMs — the permission was revoked from system
+        // settings), requestPermissions() denies silently with no UI, so the button looks dead.
+        // Detect that and route the user to the system permission settings instead.
+        if (askedBefore && !shouldShowStorageRationale()) {
+            showOpenPermissionSettingsDialog();
+            return;
+        }
+        prefs.edit().putBoolean(KEY_ASKED_STORAGE, true).apply();
         requestPermissions(perms.toArray(new String[0]), 101);
+    }
+
+    // Whether the system would still show a rationale / permission dialog for any storage perm.
+    private boolean shouldShowStorageRationale() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            return shouldShowRequestPermissionRationale(Manifest.permission.READ_MEDIA_IMAGES)
+                    || shouldShowRequestPermissionRationale(Manifest.permission.READ_MEDIA_VIDEO);
+        }
+        return shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE);
+    }
+
+    // Fallback when the permission dialog can no longer be shown automatically: explain and open
+    // the system app-settings page so the user can grant "Photos and videos" manually.
+    private void showOpenPermissionSettingsDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.app_name)
+                .setMessage(R.string.perm_required_message)
+                .setPositiveButton(R.string.perm_settings_open, (d, w) -> {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        Toast.makeText(this, R.string.no_browser, Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     @Override
@@ -389,6 +454,11 @@ public class MainActivity extends Activity {
             }
             if (allGranted || hasStoragePermission()) {
                 startServer();
+                // Re-granting storage permission may hit a Service that kept running while the
+                // permission was revoked: startServer → onStartCommand is a no-op (guarded by
+                // serverStarted), so it never re-broadcasts URL/PIN. Pull the current state from
+                // the Service so the UI does not stay on "Starting service…".
+                restoreState();
             }
         }
     }

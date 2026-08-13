@@ -66,6 +66,10 @@ public class ServerService extends Service {
     private static volatile String lastStatus = "starting";
     private static volatile String lastPin = "";
     private static volatile String lastUrl = "";
+    // Real server start epoch (set once when the server thread starts). Lets the Activity compute
+    // uptime from the Service's actual start so the counter survives Activity recreation (e.g. the
+    // system reclaiming the task while the foreground Service keeps running) instead of resetting.
+    private static volatile long serverStartEpoch = 0;
     // Running instance: after MainActivity switches language, it calls
     // refreshNotificationLocale to rebuild the notification with a wrapped context,
     // so notification text follows language switches on API 26-32 at runtime (D7)
@@ -82,6 +86,7 @@ public class ServerService extends Service {
     public static String getLastStatus() { return lastStatus; }
     public static String getLastPin() { return lastPin; }
     public static String getLastUrl() { return lastUrl; }
+    public static long getLastStartEpoch() { return serverStartEpoch; }
 
     @Override
     protected void attachBaseContext(Context base) {
@@ -123,6 +128,7 @@ public class ServerService extends Service {
 
         if (!serverStarted) {
             serverStarted = true;
+            serverStartEpoch = System.currentTimeMillis();
             WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
             if (wm != null) {
                 wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "photosmove");
@@ -144,6 +150,12 @@ public class ServerService extends Service {
             }
 
             new Thread(this::runServer).start();
+        } else {
+            // Service is already running but startForegroundService was triggered again (e.g.
+            // MainActivity re-granted storage permission and called startServer). onStartCommand
+            // is normally a no-op here, so the recreated Activity would never receive URL/PIN.
+            // Re-broadcast the current state so the reconnecting UI syncs immediately.
+            rebroadcastState();
         }
         return START_STICKY;
     }
@@ -156,6 +168,17 @@ public class ServerService extends Service {
             channel.setShowBadge(true);
             getSystemService(NotificationManager.class).createNotificationChannel(channel);
         }
+    }
+
+    // Re-broadcast the cached state so a reconnecting Activity syncs without waiting for a fresh
+    // lifecycle event from the server thread. Only forward URL/PIN for the "running" state: for
+    // wifi_required/stopped/error the receiver must hide the URL card, and broadcasting a stale
+    // or 0.0.0.0 URL here would re-show it (the receiver unhides the card for any non-empty url).
+    // Read only the volatile last* fields — not the non-volatile detected* — to avoid a
+    // cross-thread stale read from the main thread.
+    private void rebroadcastState() {
+        boolean running = "running".equals(lastStatus);
+        broadcast(lastStatus, running ? lastPin : null, running ? lastUrl : null);
     }
 
     private void broadcast(String status, String pin, String url) {

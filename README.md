@@ -2,6 +2,10 @@
 
 **English** | [中文](README.zh-CN.md)
 
+[![Website](https://img.shields.io/badge/Website-photosmove.com-4A90D9?logo=googlechrome&logoColor=white)](https://www.photosmove.com)
+[![Google Play](https://img.shields.io/badge/Download-Google_Play-34A853?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.photosmove.app)
+[![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
+
 > Move **photos** and **videos** from Android to your PC over local Wi-Fi — byte-perfect, zero damage, preserving the original folder structure. **No cloud, no PC software to install, no account.**
 
 PhotosMove is a **one-click** photo & video migration tool: move 100,000+ files / 100GB+ byte-for-byte from your phone to your computer in a single tap. Whether you call it migration, backup, export, or just "get my photos off my phone onto the computer" — if you want it lossless and off the cloud, PhotosMove does it.

@@ -2,6 +2,10 @@
 
 [English](README.md) | **中文**
 
+[![Website](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-photosmove.com-4A90D9?logo=googlechrome&logoColor=white)](https://www.photosmove.com)
+[![Google Play](https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-Google_Play-34A853?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.photosmove.app)
+[![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
+
 > 通过局域网 Wi-Fi 把 Android 手机里的**照片**和**视频**字节级无损搬到电脑，保留原始目录结构。**不联网、PC 端零安装、无需账号。**
 
 PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 10 万张 / 100GB+ 的文件字节级原样从手机搬到电脑。不管你叫它迁移、备份、导出，还是"把手机照片传到电脑上"——只要你要无损、不联网，PhotosMove 都能搞定。

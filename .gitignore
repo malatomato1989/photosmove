@@ -71,3 +71,7 @@ docs/play-store-compliance.md
 
 # macOS
 .DS_Store
+
+# Website (site/)
+site/downloads/*.apk
+!site/assets/**/*.png

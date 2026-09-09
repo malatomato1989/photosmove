@@ -291,6 +291,12 @@ public class ServerService extends Service {
 
                 @Override
                 public void onLinkPropertiesChanged(Network network, LinkProperties lp) {
+                    // Skip VPN networks: their caps include the underlying transports, so a
+                    // VPN-over-Wi-Fi network satisfies the TRANSPORT_WIFI request, but its
+                    // LinkProperties address is the tun IP (e.g. 172.18.x.x), not the Wi-Fi IP.
+                    NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+                    if (caps == null || !caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                            || caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return;
                     String ip = extractIpv4(lp);
                     if (ip != null) {
                         wifiConnected = true;

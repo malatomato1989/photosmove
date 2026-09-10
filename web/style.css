@@ -95,22 +95,17 @@ body {
     width: 72px;
     height: 72px;
     margin: 0 auto 28px;
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-    border-radius: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 24px rgba(99,102,241,0.18);
 }
 
-.brand-logo svg {
-    width: 34px;
-    height: 34px;
-    stroke: #fff;
-    fill: none;
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+.brand-logo img {
+    width: 72px;
+    height: 72px;
+    display: block;
+    border-radius: 18px;
+    box-shadow: 0 8px 24px rgba(99,102,241,0.18);
 }
 
 .connect-card h1 {
@@ -358,22 +353,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .brand-logo-sm {
     width: 40px;
     height: 40px;
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 12px rgba(99,102,241,0.25);
 }
 
-.brand-logo-sm svg {
-    width: 22px;
-    height: 22px;
-    stroke: #fff;
-    fill: none;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+.brand-logo-sm img {
+    width: 40px;
+    height: 40px;
+    display: block;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(99,102,241,0.25);
 }
 
 .brand-text {

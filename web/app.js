@@ -132,24 +132,18 @@
     }
 
     function refreshDynamicText() {
-        // card-desc (no data-i18n, managed by updateCard): must match every branch of
-        // updateCard, or after a locale change the empty/no-camera-album states would be
-        // overwritten with loading (review round-3 finding).
+        // card-desc (no data-i18n, managed by updateCard): must match updateCard's branch,
+        // otherwise a locale change would overwrite the stats line with the loading copy.
         if (!cachedAlbums || cachedAlbums.length === 0) {
             cardDesc.textContent = I18N.t('no_photos');
         } else {
-            const cameraAlbums = cachedAlbums.filter(a => a.category === 'camera');
-            if (cameraAlbums.length === 0) {
-                cardDesc.textContent = I18N.t('no_camera_photos');
-            } else {
-                const totalFiles = cameraAlbums.reduce((s, a) => s + a.file_count, 0);
-                const totalSize = cameraAlbums.reduce((s, a) => s + a.total_size, 0);
-                cardDesc.innerHTML = I18N.t('card_files_html', { count: totalFiles.toLocaleString(), size: formatSize(totalSize) });
-            }
+            const totalFiles = cachedAlbums.reduce((s, a) => s + a.file_count, 0);
+            const totalSize = cachedAlbums.reduce((s, a) => s + a.total_size, 0);
+            cardDesc.innerHTML = I18N.t('card_files_albums_html', { count: totalFiles.toLocaleString(), albums: cachedAlbums.length, size: formatSize(totalSize) });
         }
 
         // Button: consistent with updateCard — downloading→cancel, complete→redownload,
-        // no albums/no camera albums→nothing_to_download, otherwise→download_all.
+        // no albums→nothing_to_download, otherwise→download_all.
         // Do not call updateCard — in the success state it would overwrite redownload
         // back to download_all.
         if (downloading) {
@@ -159,13 +153,8 @@
         } else if (!cachedAlbums || cachedAlbums.length === 0) {
             btnDownload.textContent = I18N.t('nothing_to_download');
         } else {
-            const cameraAlbums = cachedAlbums.filter(a => a.category === 'camera');
-            if (cameraAlbums.length === 0) {
-                btnDownload.textContent = I18N.t('nothing_to_download');
-            } else {
-                const totalSize = cameraAlbums.reduce((s, a) => s + a.total_size, 0);
-                btnDownload.textContent = I18N.t('download_all', { size: formatSize(totalSize) });
-            }
+            const totalSize = cachedAlbums.reduce((s, a) => s + a.total_size, 0);
+            btnDownload.textContent = I18N.t('download_all', { size: formatSize(totalSize) });
         }
 
         // Dynamic elements in the progress section (no data-i18n): re-render only while
@@ -288,37 +277,26 @@
             return;
         }
 
-        const cameraAlbums = cachedAlbums.filter(a => a.category === 'camera');
-        if (cameraAlbums.length === 0) {
-            cardTitle.textContent = I18N.t('card_title');
-            cardDesc.textContent = I18N.t('no_camera_photos');
-            btnDownload.disabled = true;
-            btnDownload.textContent = I18N.t('nothing_to_download');
-            if (thumbRow) thumbRow.innerHTML = '';
-            return;
-        }
-
-        const totalFiles = cameraAlbums.reduce((s, a) => s + a.file_count, 0);
-        const totalSize = cameraAlbums.reduce((s, a) => s + a.total_size, 0);
+        const totalFiles = cachedAlbums.reduce((s, a) => s + a.file_count, 0);
+        const totalSize = cachedAlbums.reduce((s, a) => s + a.total_size, 0);
 
         cardTitle.textContent = I18N.t('card_title');
 
         // Free/Pro unified per spec §5.2 — both include videos, so the card
         // always shows total file count + size and a single "Download all" button.
-        cardDesc.innerHTML = I18N.t('card_files_html', { count: totalFiles.toLocaleString(), size: formatSize(totalSize) });
+        cardDesc.innerHTML = I18N.t('card_files_albums_html', { count: totalFiles.toLocaleString(), albums: cachedAlbums.length, size: formatSize(totalSize) });
         btnDownload.textContent = I18N.t('download_all', { size: formatSize(totalSize) });
 
         // verify.js free trust tool: the verify panel only expands after the user clicks
         // [Verify] and submits a ZIP.
         btnDownload.disabled = false;
 
-        // Thumbnail row: walk all camera albums, loading multiple single-image thumbnails
-        // from each.
+        // Thumbnail row: walk all albums, loading multiple single-image thumbnails from each.
         if (thumbRow) {
             thumbRow.innerHTML = '';
             const MAX_THUMBS = 4; // user feedback: 6 was too many, 4 is enough
             let placed = 0;
-            for (const a of cameraAlbums) {
+            for (const a of cachedAlbums) {
                 if (placed >= MAX_THUMBS) break;
                 const idx = cachedAlbums.indexOf(a);
                 if (idx < 0) continue;
@@ -363,7 +341,7 @@
             if (!confirm(msg)) return;
             localStorage.setItem('photosmove_heic_warned', '1');
         }
-        const paths = cachedAlbums.filter(a => a.category === 'camera').map(a => a.path);
+        const paths = cachedAlbums.map(a => a.path);
         if (paths.length > 0) startDownload(paths);
     });
 
@@ -733,10 +711,6 @@
         return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
     }
 
-    function formatGB(bytes) {
-        return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
-    }
-
     function formatMinutes(seconds) {
         if (!seconds || seconds <= 0) return '--';
         return Math.max(1, Math.round(seconds / 60)) + 'm';
@@ -769,7 +743,7 @@
         const cardEl = document.querySelector('.main-card');
         if (cardEl) cardEl.classList.add('big-file');
 
-        const sizeStr = formatGB(batch.total_size);
+        const sizeStr = formatSize(batch.total_size);
         const name = (batch.biggest_file && batch.biggest_file.name) || batch.album_name;
         const wifiMin = formatMinutes(batch.estimated_wifi_seconds);
         const usbMin = formatMinutes(batch.estimated_usb_seconds);
@@ -802,7 +776,7 @@
         return new Promise((resolve) => {
             if (getBigFileConfirmed()) { resolve(true); return; }
 
-            const sizeStr = formatGB(batch.total_size);
+            const sizeStr = formatSize(batch.total_size);
             const wifiMin = formatMinutes(batch.estimated_wifi_seconds);
             const usbMin = formatMinutes(batch.estimated_usb_seconds);
 

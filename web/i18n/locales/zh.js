@@ -20,7 +20,7 @@ window.PHOTOSMOVE_I18N.zh = {
         // --- dashboard ---
         brand_tagline: '相册迁移 · 本地隐私 · 超级轻量 · 无损传输',
         status_ready: '已就绪',
-        card_title: '相机拍摄',
+        card_title: '全部相册',
         card_desc_loading: '正在获取相册信息',
         done_badge: '✓ 传输完成',
         cancel_badge: '已取消',
@@ -33,9 +33,9 @@ window.PHOTOSMOVE_I18N.zh = {
 
         // --- card states ---
         no_photos: '未发现照片',
-        no_camera_photos: '未发现相机照片',
         nothing_to_download: '没有可下载的内容',
-        card_files_html: '共 <strong>{count}</strong> 个文件 · <strong>{size}</strong>',
+        card_files_albums_html: '共 <strong>{albums}</strong> 个相册 · <strong>{count}</strong> 个文件 · <strong>{size}</strong>',
+        card_scope_hint: '包含全部相册（含截图与 App 图片）',
         download_all: '下载全部 ({size})',
 
         // --- download lifecycle ---

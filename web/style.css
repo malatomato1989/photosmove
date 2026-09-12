@@ -494,6 +494,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
     font-weight: 700;
 }
 
+.card-scope-hint {
+    margin-top: 4px;
+    font-size: 0.8rem;
+    color: var(--color-text-mute);
+    opacity: 0.75;
+}
+
 /* ============================================================
    PROGRESS
    ============================================================ */

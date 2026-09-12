@@ -45,7 +45,11 @@ public class MediaStoreScanner {
         ArrayList<FileInfo> files = new ArrayList<>();
     }
 
-    public static void scan(Context context, File outputFile) throws Exception {
+    /**
+     * @return {albumCount, fileCount, totalSizeBytes} across all albums with files, for the
+     * in-app "library" summary line.
+     */
+    public static long[] scan(Context context, File outputFile) throws Exception {
         ContentResolver resolver = context.getContentResolver();
 
         // bucket_id -> AlbumInfo
@@ -62,9 +66,14 @@ public class MediaStoreScanner {
         JSONObject root = new JSONObject();
         JSONArray albumsArr = new JSONArray();
 
+        long grandFiles = 0;
+        long grandSize = 0;
+        long albumCount = 0;
+
         for (Map.Entry<Long, AlbumInfo> entry : albumMap.entrySet()) {
             AlbumInfo album = entry.getValue();
             if (album.files.isEmpty()) continue;
+            albumCount++;
 
             JSONObject jAlbum = new JSONObject();
             jAlbum.put("path", album.path);
@@ -86,6 +95,9 @@ public class MediaStoreScanner {
             jAlbum.put("total_size", totalSize);
             jAlbum.put("files", filesArr);
             albumsArr.put(jAlbum);
+
+            grandFiles += album.files.size();
+            grandSize += totalSize;
         }
 
         root.put("albums", albumsArr);
@@ -97,6 +109,8 @@ public class MediaStoreScanner {
 
         Log.i(TAG, "MediaStore JSON: " + outputFile.getAbsolutePath()
                 + " (" + albumMap.size() + " albums)");
+
+        return new long[]{albumCount, grandFiles, grandSize};
     }
 
     private static void queryMedia(ContentResolver resolver, Uri uri,

@@ -210,8 +210,8 @@ type BatchOpts struct {
 // warning. Conservative on purpose: better to over-estimate and surprise the
 // user with a quick finish than the reverse.
 const (
-	planDWiFiBytesPerSec int64 = 20 * 1000 * 1000 // 20 MB/s
-	planDUSBBytesPerSec  int64 = 80 * 1000 * 1000 // 80 MB/s
+	planDWiFiBytesPerSec int64 = 20 * 1024 * 1024 // 20 MB/s (1024-based, unified with display units)
+	planDUSBBytesPerSec  int64 = 80 * 1024 * 1024 // 80 MB/s (1024-based, unified with display units)
 )
 
 func estimateWiFiSeconds(size int64) int { return int(size / planDWiFiBytesPerSec) }

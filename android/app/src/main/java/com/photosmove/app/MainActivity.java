@@ -25,6 +25,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class MainActivity extends Activity {
@@ -34,6 +35,8 @@ public class MainActivity extends Activity {
     private TextView durationText;
     private LinearLayout urlCard;
     private TextView urlText;
+    private View libraryCard;
+    private TextView libraryText;
     private Button copyUrlBtn;
     private LinearLayout pinCard;
     private TextView pinText;
@@ -78,6 +81,8 @@ public class MainActivity extends Activity {
                         statusDot.setBackgroundResource(R.drawable.status_dot);
                         durationText.setVisibility(View.GONE);
                         wifiRequiredWarning.setVisibility(View.GONE);
+                        // A fresh scan is about to run: hide the previous run's library stats.
+                        libraryCard.setVisibility(View.GONE);
                         break;
                     case "running":
                         statusText.setText(R.string.status_running);
@@ -104,6 +109,7 @@ public class MainActivity extends Activity {
                         durationHandler.removeCallbacks(durationUpdater);
                         durationText.setVisibility(View.GONE);
                         progressCard.setVisibility(View.GONE);
+                        libraryCard.setVisibility(View.GONE);
                         wifiHint.setVisibility(View.GONE);
                         wifiRequiredWarning.setVisibility(View.GONE);
                         break;
@@ -113,6 +119,7 @@ public class MainActivity extends Activity {
                         durationHandler.removeCallbacks(durationUpdater);
                         durationText.setVisibility(View.GONE);
                         progressCard.setVisibility(View.GONE);
+                        libraryCard.setVisibility(View.GONE);
                         wifiHint.setVisibility(View.GONE);
                         wifiRequiredWarning.setVisibility(View.GONE);
                         break;
@@ -129,6 +136,12 @@ public class MainActivity extends Activity {
                 currentUrl = url;
                 urlCard.setVisibility(View.VISIBLE);
                 urlText.setText(url);
+            }
+
+            if (intent.hasExtra(ServerService.EXTRA_ALBUMS)) {
+                showLibrary(intent.getLongExtra(ServerService.EXTRA_ALBUMS, 0),
+                        intent.getLongExtra(ServerService.EXTRA_FILES, 0),
+                        intent.getLongExtra(ServerService.EXTRA_TOTAL_SIZE, 0));
             }
 
             String progress = intent.getStringExtra(ServerService.EXTRA_PROGRESS);
@@ -178,6 +191,8 @@ public class MainActivity extends Activity {
         durationText = findViewById(R.id.duration_text);
         urlCard = findViewById(R.id.url_card);
         urlText = findViewById(R.id.url_text);
+        libraryCard = findViewById(R.id.library_card);
+        libraryText = findViewById(R.id.library_text);
         copyUrlBtn = findViewById(R.id.copy_url_btn);
         pinCard = findViewById(R.id.pin_card);
         pinText = findViewById(R.id.pin_text);
@@ -263,10 +278,22 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    private void showLibrary(long albums, long files, long sizeBytes) {
+        String fileCount = String.format(Locale.US, "%,d", files);
+        String size = ServerService.formatSize(sizeBytes);
+        libraryText.setText(getString(R.string.library_info, albums, fileCount, size));
+        libraryCard.setVisibility(View.VISIBLE);
+    }
+
     private void restoreState() {
         String status = ServerService.getLastStatus();
         String pin = ServerService.getLastPin();
         String url = ServerService.getLastUrl();
+
+        long albums = ServerService.getLastAlbums();
+        if (albums > 0) {
+            showLibrary(albums, ServerService.getLastFiles(), ServerService.getLastTotalSize());
+        }
 
         if (!url.isEmpty()) {
             currentUrl = url;

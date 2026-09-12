@@ -17,7 +17,7 @@ window.PHOTOSMOVE_I18N.en = {
         // --- dashboard ---
         brand_tagline: 'Photo migration · private & local · lightweight · lossless',
         status_ready: 'Ready',
-        card_title: 'Camera roll',
+        card_title: 'All albums',
         card_desc_loading: 'Loading albums…',
         done_badge: '✓ Transfer complete',
         cancel_badge: 'Cancelled',
@@ -30,9 +30,9 @@ window.PHOTOSMOVE_I18N.en = {
 
         // --- card states ---
         no_photos: 'No photos found',
-        no_camera_photos: 'No camera photos found',
         nothing_to_download: 'Nothing to download',
-        card_files_html: '<strong>{count}</strong> files · <strong>{size}</strong>',
+        card_files_albums_html: '<strong>{albums}</strong> albums · <strong>{count}</strong> files · <strong>{size}</strong>',
+        card_scope_hint: 'Includes all albums (screenshots & app images)',
         download_all: 'Download all ({size})',
 
         // --- download lifecycle ---

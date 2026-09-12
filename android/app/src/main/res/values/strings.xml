@@ -26,6 +26,9 @@
     <!-- Labels -->
     <string name="label_url">① Open the address below in a computer browser</string>
     <string name="label_pin">② Enter the PIN below in the computer browser</string>
+    <string name="library_info">%1$d albums · %2$s files · %3$s</string>
+    <string name="library_scope_hint">Includes all albums (screenshots &amp; app images)</string>
+    <string name="label_library">Library</string>
     <string name="label_transfer_progress">Transfer progress</string>
     <string name="hint_wifi">Make sure phone and computer are on the same WiFi</string>
     <string name="wifi_required_warning">⚠️ Not connected to WiFi\nPlease connect to the same LAN WiFi as the computer\nAddress shows automatically once connected</string>

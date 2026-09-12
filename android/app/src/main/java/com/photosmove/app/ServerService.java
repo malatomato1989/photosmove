@@ -29,6 +29,7 @@ import java.io.OutputStream;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Locale;
 
 public class ServerService extends Service {
 
@@ -44,6 +45,9 @@ public class ServerService extends Service {
     public static final String EXTRA_URL = "url";
     public static final String EXTRA_PROGRESS = "progress";
     public static final String EXTRA_TRANSFER_STATE = "transfer_state";
+    public static final String EXTRA_ALBUMS = "albums";
+    public static final String EXTRA_FILES = "files";
+    public static final String EXTRA_TOTAL_SIZE = "total_size";
     public static final String STATE_DONE = "done";
     public static final String STATE_CANCELLED = "cancelled";
     public static final String STATE_PAUSED = "paused";
@@ -66,6 +70,11 @@ public class ServerService extends Service {
     private static volatile String lastStatus = "starting";
     private static volatile String lastPin = "";
     private static volatile String lastUrl = "";
+    // Library summary (album count / file count / total bytes), computed after the MediaStore
+    // scan and shown on the phone UI. 0 means "not available yet".
+    private static volatile long lastAlbums = 0;
+    private static volatile long lastFiles = 0;
+    private static volatile long lastTotalSize = 0;
     // Real server start epoch (set once when the server thread starts). Lets the Activity compute
     // uptime from the Service's actual start so the counter survives Activity recreation (e.g. the
     // system reclaiming the task while the foreground Service keeps running) instead of resetting.
@@ -86,6 +95,9 @@ public class ServerService extends Service {
     public static String getLastStatus() { return lastStatus; }
     public static String getLastPin() { return lastPin; }
     public static String getLastUrl() { return lastUrl; }
+    public static long getLastAlbums() { return lastAlbums; }
+    public static long getLastFiles() { return lastFiles; }
+    public static long getLastTotalSize() { return lastTotalSize; }
     public static long getLastStartEpoch() { return serverStartEpoch; }
 
     @Override
@@ -200,6 +212,11 @@ public class ServerService extends Service {
         if (url != null) intent.putExtra(EXTRA_URL, url);
         if (progress != null) intent.putExtra(EXTRA_PROGRESS, progress);
         if (transferState != null) intent.putExtra(EXTRA_TRANSFER_STATE, transferState);
+        if (lastAlbums > 0) {
+            intent.putExtra(EXTRA_ALBUMS, lastAlbums);
+            intent.putExtra(EXTRA_FILES, lastFiles);
+            intent.putExtra(EXTRA_TOTAL_SIZE, lastTotalSize);
+        }
         sendBroadcast(intent);
     }
 
@@ -415,11 +432,25 @@ public class ServerService extends Service {
 
             copyAssetDir("web", webDir);
 
+            // A new run re-scans: clear the previous summary so broadcast("starting") and any
+            // state restore during the scan cannot surface stale stats.
+            lastAlbums = 0;
+            lastFiles = 0;
+            lastTotalSize = 0;
             broadcast("starting", null, null);
 
             File mediaStoreJson = new File(filesDir, "media_store.json");
             try {
-                MediaStoreScanner.scan(ServerService.this, mediaStoreJson);
+                long[] stats = MediaStoreScanner.scan(ServerService.this, mediaStoreJson);
+                if (stats != null && stats.length == 3) {
+                    lastAlbums = stats[0];
+                    lastFiles = stats[1];
+                    lastTotalSize = stats[2];
+                    Log.i(TAG, "Library: " + lastAlbums + " albums, " + lastFiles
+                            + " files, " + formatSize(lastTotalSize));
+                    // Push the summary to the UI (status unchanged → no side effects).
+                    broadcast(null, null, null);
+                }
             } catch (Exception e) {
                 Log.e(TAG, "MediaStore scan failed", e);
             }
@@ -583,6 +614,10 @@ public class ServerService extends Service {
         super.onDestroy();
         instance = null;
         shutdownRequested = true;
+        // Service gone: drop the library summary so a later Activity cannot restore stale stats.
+        lastAlbums = 0;
+        lastFiles = 0;
+        lastTotalSize = 0;
         if (networkCallback != null) {
             try {
                 ConnectivityManager cm = (ConnectivityManager)
@@ -613,11 +648,13 @@ public class ServerService extends Service {
         }
     }
 
-    private static String formatSize(long bytes) {
-        if (bytes < 1024) return bytes + "B";
-        if (bytes < 1024 * 1024) return String.format("%.1fKB", bytes / 1024.0);
-        if (bytes < 1024L * 1024 * 1024) return String.format("%.1fMB", bytes / (1024.0 * 1024));
-        return String.format("%.1fGB", bytes / (1024.0 * 1024 * 1024));
+    public static String formatSize(long bytes) {
+        // Kept identical to the web formatSize (1024-based, same precision/spacing) so the
+        // phone UI and the PC browser show the same numbers.
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format(Locale.US, "%.1f KB", bytes / 1024.0);
+        if (bytes < 1024L * 1024 * 1024) return String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024));
+        return String.format(Locale.US, "%.2f GB", bytes / (1024.0 * 1024 * 1024));
     }
 
     private static String formatProgress(long sent, long total, long pct, String file) {

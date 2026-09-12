@@ -34,6 +34,9 @@
     <!-- Labels -->
     <string name="label_url">① 在电脑浏览器中打开下面的地址</string>
     <string name="label_pin">② 在电脑浏览器中输入下面的PIN码</string>
+    <string name="library_info">%1$d 个相册 · %2$s 个文件 · %3$s</string>
+    <string name="library_scope_hint">包含全部相册（含截图与 App 图片）</string>
+    <string name="label_library">相册库</string>
     <string name="label_transfer_progress">传输进度</string>
     <string name="hint_wifi">确保手机和电脑连接同一个 WiFi</string>
     <string name="wifi_required_warning">⚠️ 未连接 WiFi\n请连接到与电脑相同的局域网 WiFi\n连上后会自动显示地址</string>

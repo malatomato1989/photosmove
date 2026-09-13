@@ -12,7 +12,11 @@ PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 10 �
 
 ## 演示
 
-📺 [观看演示视频](https://github.com/malatomato1989/photosmove/blob/main/store/promo-video.mp4)
+<p align="center">
+  <video src="https://github.com/malatomato1989/photosmove/releases/download/demo-assets/promo-video.mp4" width="720" controls muted playsinline preload="metadata"></video>
+</p>
+
+📺 若上方播放器未加载，可[观看 / 下载演示视频](https://github.com/malatomato1989/photosmove/releases/download/demo-assets/promo-video.mp4)。
 
 ## 为什么选 PhotosMove？
 

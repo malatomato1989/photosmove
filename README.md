@@ -13,10 +13,10 @@ PhotosMove is a **one-click** photo & video migration tool: move 100,000+ files 
 ## Demo
 
 <p align="center">
-  <video src="https://github.com/malatomato1989/photosmove/releases/download/demo-assets/promo-video.mp4" width="720" controls muted playsinline preload="metadata"></video>
+  <img src="store/demo-preview.gif" width="720" alt="PhotosMove demo preview">
 </p>
 
-📺 [Watch / download the demo video](https://github.com/malatomato1989/photosmove/releases/download/demo-assets/promo-video.mp4) if the player above does not load.
+▶️ [Watch the full demo video (MP4)](https://github.com/malatomato1989/photosmove/releases/download/demo-assets/promo-video.mp4)
 
 ## Why PhotosMove?
 

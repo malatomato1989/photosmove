@@ -16,6 +16,8 @@ PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 10 �
   <img src="store/demo-preview.gif" width="720" alt="PhotosMove 演示预览">
 </p>
 
+▶️ [观看完整演示视频（36 秒，MP4）](store/demo.mp4)
+
 ## 为什么选 PhotosMove？
 
 大多数"传照片"应用会压缩、转码，或依赖云 + 安装客户端。PhotosMove 不一样：

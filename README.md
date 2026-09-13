@@ -16,8 +16,6 @@ PhotosMove is a **one-click** photo & video migration tool: move 100,000+ files 
   <img src="store/demo-preview.gif" width="720" alt="PhotosMove demo preview">
 </p>
 
-▶️ [Watch the full demo video (MP4)](https://github.com/malatomato1989/photosmove/releases/download/demo-assets/promo-video.mp4)
-
 ## Why PhotosMove?
 
 Most "photo transfer" apps compress, transcode, or need the cloud + an installed client. PhotosMove is different:

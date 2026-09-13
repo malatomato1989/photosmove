@@ -46,16 +46,18 @@ type ManifestPayload struct {
 // Real-world budget (measured against DCIM/Camera/IMG_XXXX.jpg-style paths):
 //
 //	ManifestEntry JSON encoded ≈ 70 bytes fixed overhead (keys + punctuation)
-//	 + path (avg 40-120 bytes, escaped quotes/Chinese can balloon to 200+)
-//	 + original_path (absolute DCIM path, 80-200 bytes)
+//	 + path (storage-relative DCIM/... path, avg 40-160 bytes; escaped quotes/Chinese
+//	   can balloon to 200+)
+//	 + original_path (absolute DCIM path, 80-220 bytes)
 //	 + sha256 (64 hex chars)
 //	 + size (8-20 bytes) + converted (5)
-//	 → worst-case ~450 bytes per entry
+//	 → worst-case ~650-700 bytes per entry after the directory-preserving path change
 //
-//	per-entry: 512 bytes (covers Chinese + escapes + 64-char sha + long paths)
+//	per-entry: 1024 bytes (headroom for deep folders + long CJK names; overflow
+//	           would make WriteManifest return ErrManifestOverflow and fail the batch)
 //	fixed:     max(8192, filesCount*16) — envelope, schema/session/batch_id
 func ManifestReservedSize(filesCount int) int64 {
-	perEntry := int64(512)
+	perEntry := int64(1024)
 	fixed := int64(8192)
 	if slack := int64(filesCount) * 16; slack > fixed {
 		fixed = slack

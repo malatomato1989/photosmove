@@ -38,16 +38,16 @@ type Batch struct {
 
 // Album represents a directory containing media files.
 type Album struct {
-	Path       string   `json:"path"`
-	Name       string   `json:"name"`
-	Category   string   `json:"category,omitempty"`
-	FileCount  int      `json:"file_count"`
-	TotalSize  int64    `json:"total_size"`
-	VideoCount int      `json:"video_count"`
-	VideoSize  int64    `json:"video_size"`
-	HeicCount  int      `json:"heic_count"`
-	Thumb      string   `json:"thumb,omitempty"`
-	LatestTime int64    `json:"latest_time,omitempty"`
+	Path            string   `json:"path"`
+	Name            string   `json:"name"`
+	Category        string   `json:"category,omitempty"`
+	FileCount       int      `json:"file_count"`
+	TotalSize       int64    `json:"total_size"`
+	VideoCount      int      `json:"video_count"`
+	VideoSize       int64    `json:"video_size"`
+	HeicCount       int      `json:"heic_count"`
+	Thumb           string   `json:"thumb,omitempty"`
+	LatestTime      int64    `json:"latest_time,omitempty"`
 	ThumbFiles      []string `json:"-"`
 	VideoThumbFiles []string `json:"-"`
 	// ThumbCount is exposed to the front-end: the number of single-image
@@ -293,15 +293,15 @@ func buildAlbumsFromMediaDB(db *mediaStoreDB) []Album {
 		}
 		thumbFiles := sampleEvenly(allImages, thumbSampleCount)
 		album := Album{
-			Path:       msa.Path,
-			Name:       msa.Name,
-			Category:   msa.Category,
-			FileCount:  msa.FileCount,
-			TotalSize:  msa.TotalSize,
-			VideoCount: videoCount,
-			VideoSize:  videoSize,
-			HeicCount:  heicCount,
-			LatestTime: latest,
+			Path:            msa.Path,
+			Name:            msa.Name,
+			Category:        msa.Category,
+			FileCount:       msa.FileCount,
+			TotalSize:       msa.TotalSize,
+			VideoCount:      videoCount,
+			VideoSize:       videoSize,
+			HeicCount:       heicCount,
+			LatestTime:      latest,
 			ThumbFiles:      thumbFiles,
 			VideoThumbFiles: thumbVideos,
 			ThumbCount:      len(thumbFiles),
@@ -319,14 +319,14 @@ func buildAlbumsFromMediaDB(db *mediaStoreDB) []Album {
 
 func discoverAlbumsFromFilesystem(roots []string) []Album {
 	type albumStats struct {
-		fileCount  int
-		totalSize  int64
-		thumbFiles []string
+		fileCount   int
+		totalSize   int64
+		thumbFiles  []string
 		thumbVideos []string
-		latestTime int64
-		videoCount int
-		videoSize  int64
-		heicCount  int
+		latestTime  int64
+		videoCount  int
+		videoSize   int64
+		heicCount   int
 	}
 	albumMap := make(map[string]*albumStats)
 
@@ -446,15 +446,15 @@ func discoverAlbumsFromFilesystem(roots []string) []Album {
 			continue
 		}
 		albums = append(albums, Album{
-			Path:       dir,
-			Name:       filepath.Base(dir),
-			FileCount:  st.fileCount,
-			TotalSize:  st.totalSize,
-			VideoCount: st.videoCount,
-			VideoSize:  st.videoSize,
-			HeicCount:  st.heicCount,
-			Thumb:      "composite",
-			LatestTime: st.latestTime,
+			Path:            dir,
+			Name:            filepath.Base(dir),
+			FileCount:       st.fileCount,
+			TotalSize:       st.totalSize,
+			VideoCount:      st.videoCount,
+			VideoSize:       st.videoSize,
+			HeicCount:       st.heicCount,
+			Thumb:           "composite",
+			LatestTime:      st.latestTime,
 			ThumbFiles:      st.thumbFiles,
 			VideoThumbFiles: st.thumbVideos,
 			ThumbCount:      len(st.thumbFiles),
@@ -465,6 +465,79 @@ func discoverAlbumsFromFilesystem(roots []string) []Album {
 		return albums[i].Path < albums[j].Path
 	})
 	return albums
+}
+
+// storageRoots are absolute prefixes stripped from a file's full path to build a
+// structure-preserving ZIP/relative entry path (e.g. DCIM/Camera/IMG.jpg). Without
+// this, all albums are merged into one ZIP using basenames only, so files with the
+// same name in different albums collide and overwrite each other on extraction.
+var storageRoots = []string{
+	"/sdcard/",
+	"/storage/self/primary/",
+	"/mnt/sdcard/",
+}
+
+// stripStorageRoot removes a well-known external-storage prefix and returns the
+// path inside that volume. The primary external storage of the owner
+// (/sdcard, /storage/emulated/0, /mnt/sdcard, ...) maps to the bare relative path;
+// other volumes/users KEEP their identifier so the same relative path on two
+// volumes (internal + SD card, or a second user) cannot collide inside one ZIP.
+func stripStorageRoot(p string) (string, bool) {
+	for _, pre := range storageRoots {
+		if strings.HasPrefix(p, pre) {
+			return p[len(pre):], true
+		}
+	}
+	// user-scoped roots: /storage/emulated/<n>/, /data/media/<n>/, /mnt/user/<n>/
+	for _, base := range []string{"/storage/emulated/", "/data/media/", "/mnt/user/"} {
+		rest, ok := strings.CutPrefix(p, base)
+		if !ok {
+			continue
+		}
+		i := strings.IndexByte(rest, '/')
+		if i <= 0 {
+			continue
+		}
+		user, rel := rest[:i], rest[i+1:]
+		if user == "0" {
+			return rel, true
+		}
+		return "user" + user + "/" + rel, true
+	}
+	// removable / adoptable volumes: /storage/<UUID>/, /mnt/media_rw/<UUID>/,
+	// /mnt/expand/<UUID>/ — keep the volume id as a prefix.
+	for _, base := range []string{"/storage/", "/mnt/media_rw/", "/mnt/expand/"} {
+		rest, ok := strings.CutPrefix(p, base)
+		if !ok {
+			continue
+		}
+		i := strings.IndexByte(rest, '/')
+		if i <= 0 {
+			continue
+		}
+		vol, rel := rest[:i], rest[i+1:]
+		if vol == "emulated" || vol == "self" {
+			continue // already handled above; malformed here
+		}
+		return vol + "/" + rel, true
+	}
+	return "", false
+}
+
+// entryRelPath returns a unique, structure-preserving path for a file (used as the
+// ZIP entry name). Android full paths are made relative to the storage root; other
+// roots (PC dev / custom -roots) fall back to the last two path components so
+// same-basename files in different folders still do not collide.
+func entryRelPath(fullPath, fallback string) string {
+	p := filepath.ToSlash(fullPath)
+	if rel, ok := stripStorageRoot(p); ok && rel != "" {
+		return safeZipName(rel)
+	}
+	parts := strings.Split(p, "/")
+	if n := len(parts); n >= 2 {
+		return safeZipName(strings.Join(parts[n-2:], "/"))
+	}
+	return safeZipName(fallback)
 }
 
 // scanDirectories scans each album directory independently.
@@ -567,7 +640,7 @@ func getFilesFromMediaDB(path string) []FileEntry {
 					fp = filepath.Join(msa.Path, mf.RelPath)
 				}
 				files = append(files, FileEntry{
-					Path:     filepath.ToSlash(mf.RelPath),
+					Path:     entryRelPath(fp, filepath.ToSlash(mf.RelPath)),
 					FullPath: fp,
 					Size:     mf.Size,
 					ModTime:  mf.ModTime,
@@ -633,22 +706,11 @@ func formatBytes(n int64) string {
 }
 
 // scanOneDirectory enumerates media files recursively under root.
-// For restricted paths (Android/data/), reads from MediaStore DB instead.
 // excludeDirs are subdirectories to skip (used to avoid double-counting child albums).
 func scanOneDirectory(root string, excludeDirs ...string) ([]FileEntry, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve path: %w", err)
-	}
-
-	// Check if this is a restricted MediaStore album
-	if globalMediaDB != nil {
-		for _, msa := range globalMediaDB.Albums {
-			cleanAbs := normalizePath(absRoot)
-			if normalizePath(msa.Path) == cleanAbs {
-				return scanFromMediaStore(absRoot, msa), nil
-			}
-		}
 	}
 
 	// Recursive scan: all media files under this directory tree
@@ -680,7 +742,7 @@ func scanOneDirectory(root string, excludeDirs ...string) ([]FileEntry, error) {
 			rel = d.Name()
 		}
 		files = append(files, FileEntry{
-			Path:     filepath.ToSlash(rel),
+			Path:     entryRelPath(path, filepath.ToSlash(rel)),
 			FullPath: path,
 			Size:     info.Size(),
 			ModTime:  info.ModTime().Unix(),
@@ -689,24 +751,6 @@ func scanOneDirectory(root string, excludeDirs ...string) ([]FileEntry, error) {
 	})
 
 	return files, nil
-}
-
-// scanFromMediaStore builds FileEntry list from MediaStore album data.
-func scanFromMediaStore(absRoot string, msa mediaStoreAlbum) []FileEntry {
-	files := make([]FileEntry, 0, len(msa.Files))
-	for _, mf := range msa.Files {
-		fp := mf.FullPath
-		if fp == "" {
-			fp = filepath.Join(absRoot, mf.RelPath)
-		}
-		files = append(files, FileEntry{
-			Path:     filepath.ToSlash(mf.RelPath),
-			FullPath: fp,
-			Size:     mf.Size,
-			ModTime:  mf.ModTime,
-		})
-	}
-	return files
 }
 
 // markLivePhotos detects HEIC+MOV pairs sharing the same base name and

@@ -19,10 +19,17 @@ import (
 
 // safeZipName sanitizes a file path for use as a ZIP entry name.
 // Rejects paths containing "..", then removes leading dots and slashes.
+// safeZipName sanitizes a path for use as a ZIP entry name: blocks parent
+// traversal and leading "./" / "/" while preserving nested directories and
+// legitimate names that merely contain "..", e.g. "a..b.jpg".
 func safeZipName(p string) string {
 	p = filepath.ToSlash(filepath.Clean(p))
-	if strings.Contains(p, "..") {
-		return "_"
+	// Reject only real parent-directory segments (whole ".." components), not
+	// substrings like "a..b" — Clean collapses interior ".." but keeps leading ones.
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return "_"
+		}
 	}
 	p = strings.TrimLeft(p, "./")
 	if p == "" {
@@ -38,11 +45,11 @@ func flatZipName(p string) string {
 
 // throttleWriter wraps an io.Writer with token-bucket rate limiting.
 type throttleWriter struct {
-	w       io.Writer
-	burst   int64 // max bytes that can be sent instantly
-	tokens  int64 // current token count
-	last    time.Time
-	rate    int64 // bytes per second
+	w      io.Writer
+	burst  int64 // max bytes that can be sent instantly
+	tokens int64 // current token count
+	last   time.Time
+	rate   int64 // bytes per second
 }
 
 func newThrottleWriter(w io.Writer, bytesPerSec int64) *throttleWriter {
@@ -118,9 +125,9 @@ func (errSkipFile) Error() string { return "archiver: skip file (open-stage fail
 // On write timeout, calls cancelFn so the handler's ctx.Err() path triggers
 // TCP Hijack+RST, which unblocks the leaked goroutine.
 type ctxWriter struct {
-	w       io.Writer
-	ctx     context.Context
-	cancel  context.CancelFunc
+	w      io.Writer
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 type writeResult struct {
@@ -176,10 +183,10 @@ func (z zeroReader) Read(p []byte) (int, error) {
 // have been removed. Keeping the fields avoids touching external call sites
 // en masse and eases future Pro reuse.
 type ZipWriteOptions struct {
-	ConvertHeic   bool
-	FlatMode      bool
-	SmartRename   bool
-	StripGps      bool
+	ConvertHeic bool
+	FlatMode    bool
+	SmartRename bool
+	StripGps    bool
 	// StripExifCats extends StripGps to additional EXIF categories
 	// (gps/time/device/shot/author). Multiple may be selected at once.
 	// Empty (with StripGps=false) means no EXIF stripping.
@@ -195,7 +202,7 @@ type ZipWriteOptions struct {
 	// the client can correlate a downloaded ZIP back to its download session
 	// for diagnostics. Ignored when EmitManifest is false.
 	SessionID string
-	BatchID  string
+	BatchID   string
 }
 
 // BatchOpts is retained for API stability. With single-zip-trust-tcp, the

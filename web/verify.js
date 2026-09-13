@@ -429,6 +429,15 @@
                 return;
             }
 
+            // Duplicate entry names mean extraction would silently overwrite one file
+            // with another; the size/sha checks below cannot detect it (the map keeps
+            // only the last entry), so fail explicitly.
+            if (result.duplicates.length > 0) {
+                showError(I18N.t('verify_duplicate_entries'),
+                    result.duplicates.slice(0, 3).join(', '));
+                return;
+            }
+
             // Read manifest.json's actual bytes (file.slice reads only this small block).
             const manifestBytes = await readZipEntry(file, result.manifestEntry);
             let manifest;
@@ -529,6 +538,8 @@
         const cdView = new DataView(cd.buffer);
 
         const fileMap = new Map();
+        const seenPaths = new Set();
+        const duplicates = [];
         let manifestEntry = null;
         let off = 0;
         for (let i = 0; i < totalEntries; i++) {
@@ -555,6 +566,8 @@
                 if (z.offset !== null) localHeaderOffset = z.offset;
             }
 
+            if (seenPaths.has(path)) duplicates.push(path);
+            else seenPaths.add(path);
             fileMap.set(path, { size: uncompressedSize, offset: localHeaderOffset });
 
             if (!manifestEntry && (path === 'manifest.json' || path.endsWith('/manifest.json'))) {
@@ -564,7 +577,7 @@
             off += 46 + fileNameLen + extraLen + commentLen;
         }
 
-        return { fileMap, manifestEntry };
+        return { fileMap, manifestEntry, duplicates };
     }
 
     // readZipEntry uses file.slice to read only a single entry's content bytes (without

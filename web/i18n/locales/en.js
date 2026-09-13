@@ -113,6 +113,7 @@ window.PHOTOSMOVE_I18N.en = {
         verify_parsing_cd: 'Parsing ZIP central directory: {name} ({size})...',
         verify_no_manifest: '⚠️ manifest.json not found in the ZIP',
         verify_no_manifest_hint: 'Make sure this is a ZIP downloaded from PhotosMove',
+        verify_duplicate_entries: '⚠️ Duplicate file names in the ZIP — extraction would overwrite files. Please re-download.',
         verify_manifest_parse_failed: '⚠️ Failed to parse manifest.json',
         verify_manifest_invalid: '⚠️ manifest.json is not in a valid format',
         verify_source_zip: 'ZIP file',

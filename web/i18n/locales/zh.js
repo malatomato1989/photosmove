@@ -116,6 +116,7 @@ window.PHOTOSMOVE_I18N.zh = {
         verify_parsing_cd: '解析 ZIP 中央目录: {name} ({size})...',
         verify_no_manifest: '⚠️ ZIP 内未找到 manifest.json',
         verify_no_manifest_hint: '请确认是 PhotosMove 下载的 ZIP',
+        verify_duplicate_entries: '⚠️ ZIP 内存在重名文件——解压会互相覆盖，请重新下载',
         verify_manifest_parse_failed: '⚠️ manifest.json 解析失败',
         verify_manifest_invalid: '⚠️ manifest.json 格式无效',
         verify_source_zip: 'ZIP 文件',

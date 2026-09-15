@@ -8,7 +8,7 @@
 
 > Move **photos** and **videos** from Android to your PC over local Wi-Fi — byte-perfect, zero damage, preserving the original folder structure. **No cloud, no PC software to install, no account.**
 
-PhotosMove is a **one-click** photo & video migration tool: move 100,000+ files / 100GB+ byte-for-byte from your phone to your computer in a single tap. Whether you call it migration, backup, export, or just "get my photos off my phone onto the computer" — if you want it lossless and off the cloud, PhotosMove does it.
+PhotosMove is a **one-click** photo & video migration tool: move 1,600+ photos & videos (20GB+) byte-for-byte from your phone to your computer in a single tap. Whether you call it migration, backup, export, or just "get my photos off my phone onto the computer" — if you want it lossless and off the cloud, PhotosMove does it.
 
 ## Demo
 
@@ -25,7 +25,7 @@ Most "photo transfer" apps compress, transcode, or need the cloud + an installed
 - 🔒 **Byte-perfect** — original bytes preserved (JPG/HEIC/HEIF/RAW/DNG/MP4/MOV/Live Photo). EXIF, GPS, timestamps intact. No recompression, no transcoding.
 - 🖱️ **One click** — pick albums, download. No driver, no client app, no account on the PC side (just a browser).
 - 📁 **Original folder structure kept** — files land in the same DCIM/Pictures layout as on the phone.
-- 🚀 **100GB+ in one go** — single streaming ZIP download, resumable per album, ZIP64 for files > 4GB.
+- 🚀 **20GB+ in one go** — single streaming ZIP download, resumable per album, ZIP64 for files > 4GB.
 - ✅ **Built-in integrity check** — SHA-256 byte-level verify after download (runs locally, nothing uploaded).
 - 🏠 **100% local** — transfer never leaves your Wi-Fi. No cloud, no telemetry, no servers.
 - 🔓 **Open source (GPL-3.0)** — fully auditable.
@@ -69,7 +69,7 @@ Phone runs an HTTP server (Go + Android foreground service) → PC browser conne
 | Byte-perfect original | ✅ | ✅ | ⚠️ compresses | ✅ | ⚠️ optional |
 | Keeps folder structure | ✅ | ❌ | ❌ | ✅ | ❌ |
 | Stays local (no cloud) | ✅ | ✅ | ❌ | ✅ | ⚠️ |
-| Bulk 100GB+ one download | ✅ | ✅ | ❌ | ⚠️ | ❌ |
+| Bulk 20GB+ one download | ✅ | ✅ | ❌ | ⚠️ | ❌ |
 | Open source | ✅ | ✅ | ❌ | ✅ | ❌ |
 
 ## Features
@@ -108,7 +108,7 @@ bash build.sh -i       # install debug to a connected device
 - **Is PhotosMove a cloud service?** No. All transfer happens on your local Wi-Fi. No cloud, no account.
 - **Is this a backup or sync tool?** It's a **one-click migration** tool today — get your photos & videos from phone to computer, lossless. Incremental sync is on the roadmap. It is not a continuous cloud backup.
 - **Does it compress or re-encode my photos/videos?** No. Files are transferred byte-for-byte; EXIF/GPS/format are preserved.
-- **Can I transfer 100GB+ in one go?** Yes — streaming ZIP + ZIP64, validated on large libraries.
+- **Can I transfer 20GB+ in one go?** Yes — streaming ZIP + ZIP64, validated on real libraries.
 - **iOS support?** Not yet — Android only for now.
 
 ## Privacy

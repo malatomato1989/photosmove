@@ -33,7 +33,7 @@ public class MediaFileServer extends Thread {
     private final int port;
     private final String allowedPrefix;
     private final ExecutorService threadPool = Executors.newFixedThreadPool(4);
-    private ServerSocket serverSocket;
+    private volatile ServerSocket serverSocket;
     private volatile boolean running = true;
 
     public MediaFileServer(int port) {
@@ -48,7 +48,29 @@ public class MediaFileServer extends Thread {
         setDaemon(true);
     }
 
-    public void shutdown() {
+    // Bind synchronously before the thread starts so the caller can pass the
+    // real (possibly ephemeral) port to the Go process via -media-port.
+    @Override
+    public synchronized void start() {
+        // shutdown() may have run first (stop requested during scan): do not bind a socket
+        // that nobody will ever close.
+        if (!running) return;
+        if (serverSocket == null) {
+            try {
+                serverSocket = new ServerSocket(port, 50, InetAddress.getByName("127.0.0.1"));
+            } catch (Exception e) {
+                Log.e(TAG, "MediaFileServer bind failed", e);
+                throw new IllegalStateException("MediaFileServer bind failed", e);
+            }
+        }
+        super.start();
+    }
+
+    public int getPort() {
+        return serverSocket != null ? serverSocket.getLocalPort() : -1;
+    }
+
+    public synchronized void shutdown() {
         running = false;
         threadPool.shutdown();
         try {
@@ -61,8 +83,7 @@ public class MediaFileServer extends Thread {
     @Override
     public void run() {
         try {
-            serverSocket = new ServerSocket(port, 50, InetAddress.getByName("127.0.0.1"));
-            Log.i(TAG, "MediaFileServer listening on 127.0.0.1:" + port);
+            Log.i(TAG, "MediaFileServer listening on 127.0.0.1:" + getPort());
             while (running) {
                 try {
                     Socket client = serverSocket.accept();
@@ -75,6 +96,11 @@ public class MediaFileServer extends Thread {
             if (running) Log.e(TAG, "MediaFileServer error", e);
         } finally {
             threadPool.shutdown();
+            try {
+                if (serverSocket != null && !serverSocket.isClosed()) {
+                    serverSocket.close();
+                }
+            } catch (Exception ignored) {}
         }
     }
 

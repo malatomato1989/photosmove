@@ -8,6 +8,7 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.graphics.drawable.Icon;
 import android.net.ConnectivityManager;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
@@ -16,9 +17,12 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.util.Log;
+import android.widget.Toast;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -37,9 +41,12 @@ public class ServerService extends Service {
     public static final String VERSION = BuildConfig.VERSION;
     private static final String CHANNEL_ID = "photosmove_server";
     private static final int NOTIFICATION_ID = 1;
+    private static final int REQUEST_CONTENT = 0;
+    private static final int REQUEST_STOP = 1;
 
     // Broadcast action and keys
     public static final String ACTION_UPDATE = "com.photosmove.app.UPDATE";
+    public static final String ACTION_STOP = "com.photosmove.app.STOP";
     public static final String EXTRA_STATUS = "status";
     public static final String EXTRA_PIN = "pin";
     public static final String EXTRA_URL = "url";
@@ -60,9 +67,17 @@ public class ServerService extends Service {
     private String detectedUrl = "";
     private WifiManager.WifiLock wifiLock;
     private PowerManager.WakeLock cpuWakeLock;
-    private ConnectivityManager.NetworkCallback networkCallback;
+    private volatile ConnectivityManager.NetworkCallback networkCallback;
     private volatile boolean serverStarted = false;
     private volatile boolean shutdownRequested = false;
+    // Invalidates the previous runServer thread when stop → start happens quickly: the old
+    // thread must not clear serverStarted / stopSelf / tear down the new run.
+    private volatile int runGeneration = 0;
+    // Serializes start/finish/stop state transitions with the background run's finally block.
+    private final Object lifecycleLock = new Object();
+    // startId of the run that owns `serverStarted`; guarded by lifecycleLock.
+    private int currentStartId = -1;
+    private volatile String lastNotificationText = "";
     private volatile boolean wifiConnected = false;
     private long lastNotificationTime = 0;
 
@@ -79,6 +94,13 @@ public class ServerService extends Service {
     // uptime from the Service's actual start so the counter survives Activity recreation (e.g. the
     // system reclaiming the task while the foreground Service keeps running) instead of resetting.
     private static volatile long serverStartEpoch = 0;
+    // Actual port picked by the Go process (0 = not reported yet). All URL building must
+    // go through buildUrl() so a fallback port never surfaces as the hardcoded default.
+    private volatile int serverPort = 0;
+    private volatile String wifiIp = null;
+    // Reuse the last successful port on the next run to minimize URL changes.
+    private static final String PREFS_NAME = "photosmove_prefs";
+    private static final String KEY_LAST_PORT = "last_port";
     // Running instance: after MainActivity switches language, it calls
     // refreshNotificationLocale to rebuild the notification with a wrapped context,
     // so notification text follows language switches on API 26-32 at runtime (D7)
@@ -118,28 +140,49 @@ public class ServerService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            stopServerAndSelf(startId);
+            return START_NOT_STICKY;
+        }
+
         instance = this;
+        final int startNewGeneration;
+        final boolean startNew;
+        synchronized (lifecycleLock) {
+            // A fresh start (including stop → start) must never inherit the previous stop flag.
+            shutdownRequested = false;
+            // Track the latest delivered startId (even for rebroadcast-only starts) so the
+            // run's finally can stopSelf with the newest id and never strand a dead service.
+            currentStartId = startId;
+            startNew = !serverStarted;
+            if (startNew) {
+                serverStarted = true;
+                startNewGeneration = ++runGeneration;
+            } else {
+                startNewGeneration = runGeneration;
+            }
+        }
+
         createNotificationChannel();
-        Intent notifIntent = new Intent(this, MainActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, notifIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle(localizedCtx.getString(R.string.app_name))
-                .setContentText(localizedCtx.getString(R.string.notif_service_running))
-                .setSmallIcon(R.drawable.ic_notification)
-                .setOngoing(true)
-                .setPriority(Notification.PRIORITY_MAX)
-                .setDefaults(0)
-                .setContentIntent(pi)
-                .build();
+        // Repeated starts while already running must not overwrite a progress/done/wifi
+        // notification with the generic "service running" text.
+        String notifText = startNew
+                ? localizedCtx.getString(R.string.notif_service_running)
+                : lastNotificationText;
+        if (notifText == null || notifText.isEmpty()) {
+            notifText = localizedCtx.getString(R.string.notif_service_running);
+        }
+        lastNotificationText = notifText;
+        Notification notification = buildNotification(
+                localizedCtx.getString(R.string.app_name), notifText);
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         } else {
             startForeground(NOTIFICATION_ID, notification);
         }
 
-        if (!serverStarted) {
-            serverStarted = true;
+        if (startNew) {
+            final int generation = startNewGeneration;
             serverStartEpoch = System.currentTimeMillis();
             WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
             if (wm != null) {
@@ -161,7 +204,7 @@ public class ServerService extends Service {
                 cpuWakeLock.acquire();
             }
 
-            new Thread(this::runServer).start();
+            new Thread(() -> runServer(generation)).start();
         } else {
             // Service is already running but startForegroundService was triggered again (e.g.
             // MainActivity re-granted storage permission and called startServer). onStartCommand
@@ -170,6 +213,43 @@ public class ServerService extends Service {
             rebroadcastState();
         }
         return START_STICKY;
+    }
+
+    private PendingIntent contentPendingIntent() {
+        Intent notifIntent = new Intent(this, MainActivity.class);
+        // Reuse the existing task instead of stacking another MainActivity: tapping the
+        // ongoing notification repeatedly used to require multiple back presses.
+        notifIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        return PendingIntent.getActivity(this, REQUEST_CONTENT, notifIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    private PendingIntent stopPendingIntent() {
+        Intent stopIntent = new Intent(this, ServerService.class);
+        stopIntent.setAction(ACTION_STOP);
+        return PendingIntent.getService(this, REQUEST_STOP, stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    // Single notification builder: same ID + setOnlyAlertOnce prevents ROMs from popping a
+    // fresh heads-up alert on every progress update / repeat start.
+    private Notification buildNotification(String title, String text) {
+        Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setPriority(Notification.PRIORITY_MAX)
+                .setDefaults(0)
+                .setContentIntent(contentPendingIntent())
+                .addAction(new Notification.Action.Builder(
+                        Icon.createWithResource(this, R.drawable.ic_stop),
+                        localizedCtx.getString(R.string.notif_stop_action),
+                        stopPendingIntent()).build())
+                .setSound(null)
+                .setVibrate(null);
+        return builder.build();
     }
 
     private void createNotificationChannel() {
@@ -203,6 +283,15 @@ public class ServerService extends Service {
 
     private void broadcast(String status, String pin, String url, String progress, String transferState) {
         if (status != null) lastStatus = status;
+        // starting/stopped/error have no usable address: drop cached URL/PIN so a recreated
+        // Activity cannot restore a dead endpoint (broadcast only ever overwrites non-empty).
+        if ("starting".equals(status) || "stopped".equals(status) || "error".equals(status)) {
+            lastUrl = "";
+            lastPin = "";
+            detectedUrl = "";
+            detectedPin = "";
+            serverPort = 0;
+        }
         if (pin != null && !pin.isEmpty()) lastPin = pin;
         if (url != null && !url.isEmpty()) lastUrl = url;
         Intent intent = new Intent(ACTION_UPDATE);
@@ -212,12 +301,70 @@ public class ServerService extends Service {
         if (url != null) intent.putExtra(EXTRA_URL, url);
         if (progress != null) intent.putExtra(EXTRA_PROGRESS, progress);
         if (transferState != null) intent.putExtra(EXTRA_TRANSFER_STATE, transferState);
-        if (lastAlbums > 0) {
+        // Album stats describe a usable library: do not let them reappear after stop/error
+        // (the receiver unhides the library card whenever the extras are present).
+        if (lastAlbums > 0 && (status == null || "running".equals(status) || "starting".equals(status))) {
             intent.putExtra(EXTRA_ALBUMS, lastAlbums);
             intent.putExtra(EXTRA_FILES, lastFiles);
             intent.putExtra(EXTRA_TOTAL_SIZE, lastTotalSize);
         }
         sendBroadcast(intent);
+    }
+
+    // Explicit user stop (in-app button or notification action). onDestroy performs the
+    // remaining teardown; doing the time-sensitive pieces here gives immediate UI feedback.
+    private void stopServerAndSelf(int startId) {
+        synchronized (lifecycleLock) {
+            shutdownRequested = true;
+            serverStarted = false;
+            runGeneration++;
+            currentStartId = -1;
+        }
+        wifiConnected = false;
+        wifiIp = null;
+        unregisterWifiCallback();
+        // Drop the library summary with the service so stopped/error states never show it.
+        lastAlbums = 0;
+        lastFiles = 0;
+        lastTotalSize = 0;
+        broadcast("stopped", null, null);
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm != null) nm.cancel(NOTIFICATION_ID);
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        if (mediaFileServer != null) {
+            mediaFileServer.shutdown();
+        }
+        if (serverProcess != null) {
+            serverProcess.destroy();
+        }
+        // stopSelf(startId) is ignored if a newer start request arrived in the meantime,
+        // so a rapid stop → start cannot kill the fresh run.
+        stopSelf(startId);
+    }
+
+    private String buildUrl(String ip) {
+        int port = serverPort;
+        if (ip == null || ip.isEmpty() || port <= 0) return null;
+        return "http://" + ip + ":" + port;
+    }
+
+    // Called when the Go child reports PORT:<n>. If Wi-Fi was already known before the port
+    // arrived (startup race), publish the URL now; otherwise the network callback will.
+    private void onPortReady(int port, int generation) {
+        // Re-check generation: a stop → start can happen between reading the line and here.
+        if (port <= 0 || isStale(generation)) return;
+        serverPort = port;
+        // Remember the successful port so the next start tries it first.
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putInt(KEY_LAST_PORT, port).apply();
+        if (wifiConnected) {
+            String url = buildUrl(wifiIp);
+            if (url != null) {
+                detectedUrl = url;
+                broadcast("running", detectedPin, url);
+                updateNotification(url);
+            }
+        }
     }
 
     @SuppressWarnings("deprecation")
@@ -281,9 +428,23 @@ public class ServerService extends Service {
         return null;
     }
 
+    private void unregisterWifiCallback() {
+        ConnectivityManager.NetworkCallback callback = networkCallback;
+        networkCallback = null;
+        if (callback == null) return;
+        try {
+            ConnectivityManager cm = (ConnectivityManager)
+                    getApplicationContext().getSystemService(CONNECTIVITY_SERVICE);
+            if (cm != null) cm.unregisterNetworkCallback(callback);
+        } catch (Exception ignored) {}
+    }
+
     // Register a NetworkCallback listening for WiFi connect/disconnect to auto-update the URL (no app restart needed).
     // Callbacks fire on a system binder thread; broadcast/updateNotification are thread-safe.
     private void registerWifiCallback() {
+        if (shutdownRequested) return;
+        // Never stack callbacks across a stop → start on the same Service instance.
+        unregisterWifiCallback();
         try {
             ConnectivityManager cm = (ConnectivityManager)
                     getApplicationContext().getSystemService(CONNECTIVITY_SERVICE);
@@ -299,6 +460,7 @@ public class ServerService extends Service {
             networkCallback = new ConnectivityManager.NetworkCallback() {
                 @Override
                 public void onAvailable(Network network) {
+                    if (shutdownRequested) return;
                     // Some ROMs fire onAvailable but never re-fire onLinkPropertiesChanged for a
                     // Wi-Fi that was already connected at register time. Pull LinkProperties
                     // explicitly so the URL is captured as early as possible.
@@ -308,6 +470,7 @@ public class ServerService extends Service {
 
                 @Override
                 public void onLinkPropertiesChanged(Network network, LinkProperties lp) {
+                    if (shutdownRequested) return;
                     // Skip VPN networks: their caps include the underlying transports, so a
                     // VPN-over-Wi-Fi network satisfies the TRANSPORT_WIFI request, but its
                     // LinkProperties address is the tun IP (e.g. 172.18.x.x), not the Wi-Fi IP.
@@ -317,17 +480,44 @@ public class ServerService extends Service {
                     String ip = extractIpv4(lp);
                     if (ip != null) {
                         wifiConnected = true;
-                        String url = "http://" + ip + ":8080";
+                        wifiIp = ip;
                         Log.i(TAG, "WiFi IP (callback): " + ip);
-                        detectedUrl = url;
-                        broadcast("running", detectedPin, url);
-                        updateNotification(url);
+                        String url = buildUrl(ip);
+                        // Port may not be reported yet during cold start; onPortReady() will
+                        // publish the URL once PORT:<n> arrives.
+                        if (url != null) {
+                            detectedUrl = url;
+                            broadcast("running", detectedPin, url);
+                            updateNotification(url);
+                        }
                     }
                 }
 
                 @Override
                 public void onLost(Network network) {
+                    if (shutdownRequested) return;
+                    // A lost VPN network also satisfies the Wi-Fi NetworkRequest; do not let it
+                    // masquerade as "Wi-Fi lost". Re-evaluate the actual Wi-Fi IPv4 so a late
+                    // onLost for an old network cannot overwrite a newer valid address.
+                    NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+                    if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return;
+                    String ip = wifiIPv4(cm);
+                    if (ip != null) {
+                        boolean changed = !wifiConnected || !ip.equals(wifiIp);
+                        wifiConnected = true;
+                        wifiIp = ip;
+                        if (changed) {
+                            String url = buildUrl(ip);
+                            if (url != null) {
+                                detectedUrl = url;
+                                broadcast("running", detectedPin, url);
+                                updateNotification(url);
+                            }
+                        }
+                        return;
+                    }
                     wifiConnected = false;
+                    wifiIp = null;
                     Log.i(TAG, "WiFi network lost → wifi_required");
                     broadcast("wifi_required", null, null);
                     updateNotification(localizedCtx.getString(R.string.notif_wifi_required));
@@ -336,6 +526,7 @@ public class ServerService extends Service {
 
             cm.registerNetworkCallback(req, networkCallback);
 
+            if (shutdownRequested) return;
             // Initial check: if Wi-Fi is already connected, broadcast its real URL immediately
             // instead of only flipping a boolean and waiting for onLinkPropertiesChanged (which
             // is not guaranteed to re-fire for an already-connected network on every ROM — that
@@ -343,12 +534,17 @@ public class ServerService extends Service {
             String initialIp = wifiIPv4(cm);
             if (initialIp != null) {
                 wifiConnected = true;
-                String url = "http://" + initialIp + ":8080";
+                wifiIp = initialIp;
                 Log.i(TAG, "WiFi IP (initial): " + initialIp);
-                detectedUrl = url;
-                broadcast("running", detectedPin, url);
-                updateNotification(url);
+                String url = buildUrl(initialIp);
+                if (url != null) {
+                    detectedUrl = url;
+                    broadcast("running", detectedPin, url);
+                    updateNotification(url);
+                }
             } else {
+                wifiConnected = false;
+                wifiIp = null;
                 Log.i(TAG, "No active WiFi at startup → wifi_required");
                 broadcast("wifi_required", null, null);
                 updateNotification(localizedCtx.getString(R.string.notif_wifi_required));
@@ -366,20 +562,11 @@ public class ServerService extends Service {
         long now = System.currentTimeMillis();
         if (throttle && now - lastNotificationTime < 2000) return;
         lastNotificationTime = now;
+        lastNotificationText = text;
 
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        Intent notifIntent = new Intent(this, MainActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, notifIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification notification = new Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle(localizedCtx.getString(R.string.app_name))
-                .setContentText(text)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setOngoing(true)
-                .setPriority(Notification.PRIORITY_MAX)
-                .setDefaults(0)
-                .setContentIntent(pi)
-                .build();
+        Notification notification = buildNotification(
+                localizedCtx.getString(R.string.app_name), text);
         nm.notify(NOTIFICATION_ID, notification);
     }
 
@@ -392,7 +579,7 @@ public class ServerService extends Service {
      */
     public static void refreshNotificationLocale(Context appCtx) {
         ServerService svc = instance;
-        if (svc == null) return;
+        if (svc == null || svc.shutdownRequested) return;
         // Use svc rather than appCtx: on API 26-32 resolveLocalizedContext overrides the locale
         // (base-independent, equivalent); on API 33+ it returns base, and svc (Service context)
         // unambiguously follows LocaleManager, whereas appCtx (the old Activity) may have a
@@ -404,33 +591,41 @@ public class ServerService extends Service {
     private void doRefreshNotification(Context ctx) {
         NotificationManager nm = (NotificationManager) ctx.getSystemService(NOTIFICATION_SERVICE);
         if (nm == null) return;
-        Intent notifIntent = new Intent(this, MainActivity.class);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, notifIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         // Rebuild the static notification text; if a transfer is in progress, subsequent PROGRESS
         // updates already follow the new language via localizedCtx.getString.
         String text = "wifi_required".equals(lastStatus)
                 ? ctx.getString(R.string.notif_wifi_required)
                 : ctx.getString(R.string.notif_service_running);
-        Notification notification = new Notification.Builder(ctx, CHANNEL_ID)
-                .setContentTitle(ctx.getString(R.string.app_name))
-                .setContentText(text)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setOngoing(true)
-                .setPriority(Notification.PRIORITY_MAX)
-                .setDefaults(0)
-                .setContentIntent(pi)
-                .build();
+        lastNotificationText = text;
+        Notification notification = buildNotification(ctx.getString(R.string.app_name), text);
         nm.notify(NOTIFICATION_ID, notification);
     }
 
-    private void runServer() {
+    private boolean isStale(int generation) {
+        return shutdownRequested || runGeneration != generation;
+    }
+
+    private void runServer(int generation) {
         serverThread = Thread.currentThread();
+        // Locals so a stale run can never tear down a newer run's process/socket via the
+        // shared fields during a stop → start race.
+        MediaFileServer mediaServer = null;
+        Process process = null;
+        InputStream stdout = null;
         try {
+            if (isStale(generation)) return;
             File filesDir = getFilesDir();
             File webDir = new File(filesDir, "web");
 
+            // Fresh run: never trust in-memory port/WiFi from a previous run.
+            serverPort = 0;
+            wifiConnected = false;
+            wifiIp = null;
+            lastNotificationTime = 0;
+
             copyAssetDir("web", webDir);
+            // copyAssetDir can be slow after an APK update; a stop → start may have happened.
+            if (isStale(generation)) return;
 
             // A new run re-scans: clear the previous summary so broadcast("starting") and any
             // state restore during the scan cannot surface stale stats.
@@ -443,6 +638,9 @@ public class ServerService extends Service {
             try {
                 long[] stats = MediaStoreScanner.scan(ServerService.this, mediaStoreJson);
                 if (stats != null && stats.length == 3) {
+                    // The scan can take seconds on a large library; never let a stopped/old
+                    // run repopulate the UI with its results.
+                    if (isStale(generation)) return;
                     lastAlbums = stats[0];
                     lastFiles = stats[1];
                     lastTotalSize = stats[2];
@@ -455,8 +653,17 @@ public class ServerService extends Service {
                 Log.e(TAG, "MediaStore scan failed", e);
             }
 
-            mediaFileServer = new MediaFileServer(8082);
-            mediaFileServer.start();
+            if (isStale(generation)) return;
+
+            // Ephemeral loopback port: avoids a second hardcoded port conflicting with another app.
+            mediaServer = new MediaFileServer(0);
+            mediaFileServer = mediaServer;
+            mediaServer.start();
+            int mediaPort = mediaServer.getPort();
+            if (mediaPort <= 0) {
+                if (isStale(generation)) return;
+                throw new IllegalStateException("MediaFileServer failed to bind a port");
+            }
 
             String nativeLibDir = getApplicationInfo().nativeLibraryDir;
             File binary = new File(nativeLibDir, "libphotosmove.so");
@@ -473,26 +680,59 @@ public class ServerService extends Service {
             cmd.add(binary.getAbsolutePath());
             cmd.add("-roots"); cmd.add("/sdcard/DCIM/Camera");
             cmd.add("-web"); cmd.add(webDir.getAbsolutePath());
-            cmd.add("-port"); cmd.add("8080");
+            // Try last run's successful port first; Go then falls back through the easy
+            // pool (1111...9999) and finally an ephemeral port, reporting PORT:<n>.
+            int lastPort = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getInt(KEY_LAST_PORT, 0);
+            if (lastPort > 0) {
+                cmd.add("-port"); cmd.add(String.valueOf(lastPort));
+            }
             if (wifiIP != null && !wifiIP.isEmpty()) {
                 cmd.add("-lan-ip"); cmd.add(wifiIP);
             }
             cmd.add("-media-db"); cmd.add(mediaStoreJson.getAbsolutePath());
-            cmd.add("-media-port"); cmd.add("8082");
+            cmd.add("-media-port"); cmd.add(String.valueOf(mediaPort));
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(true);
-            serverProcess = pb.start();
-            serverStdout = serverProcess.getInputStream();
+            process = pb.start();
+            serverProcess = process;
+            stdout = process.getInputStream();
+            serverStdout = stdout;
+            if (isStale(generation)) {
+                process.destroy();
+                return;
+            }
 
             // Register NetworkCallback: WiFi lost → prompt, WiFi connected → auto-update URL (no app restart needed).
             registerWifiCallback();
 
             BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(serverStdout));
+                    new InputStreamReader(stdout));
             String line;
+            boolean bindFailed = false;
 
             while ((line = reader.readLine()) != null) {
                 Log.i(TAG, line);
+                // Explicit stop (or onDestroy) wins over any buffered child-process lines;
+                // otherwise a late PORT/listening line could overwrite "stopped" with "running".
+                if (isStale(generation)) break;
+
+                if (!line.contains("PROGRESS:") && line.contains("ERROR:PORT_UNAVAILABLE")) {
+                    bindFailed = true;
+                    broadcast("error", null, null);
+                    final String msg = localizedCtx.getString(R.string.port_allocate_failed);
+                    new Handler(Looper.getMainLooper()).post(() ->
+                            Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_LONG).show());
+                    continue;
+                }
+
+                // Guard against a PROGRESS line whose file name happens to contain "PORT:".
+                if (!line.contains("PROGRESS:") && line.contains("PORT:")) {
+                    int idx = line.indexOf("PORT:");
+                    try {
+                        onPortReady(Integer.parseInt(line.substring(idx + 5).trim()), generation);
+                    } catch (NumberFormatException ignored) {}
+                    continue;
+                }
 
                 // Parse progress lines: PROGRESS:batchID sent total pct files fileName
                 if (line.contains("PROGRESS:")) {
@@ -542,35 +782,64 @@ public class ServerService extends Service {
                 }
 
                 if (line.contains("listening on")) {
-                    int idx = line.indexOf("https://");
-                    if (idx < 0) idx = line.indexOf("http://");
-                    if (idx >= 0) {
-                        detectedUrl = line.substring(idx);
+                    // Prefer the Wi-Fi address we validated ourselves. Go's getLANIP follows
+                    // the default route and may be a cellular/VPN address when -lan-ip was not
+                    // passed; use its printed URL only as a fallback.
+                    String url = buildUrl(wifiIp);
+                    if (url == null) {
+                        int idx = line.indexOf("https://");
+                        if (idx < 0) idx = line.indexOf("http://");
+                        if (idx >= 0) url = line.substring(idx);
                     }
-                    // Only trust Go's URL when Wi-Fi is actually connected. Without Wi-Fi, Go's
-                    // getLANIP follows the default route and may print a cellular/VPN egress IP
-                    // (not 0.0.0.0) that a PC cannot reach — broadcasting it would flip the UI
-                    // from the correct wifi_required prompt to a misleading running URL.
-                    if (!detectedUrl.contains("0.0.0.0") && wifiConnected) {
-                        broadcast("running", detectedPin, detectedUrl);
+                    // Only publish when Wi-Fi is actually connected.
+                    if (url != null && !url.contains("0.0.0.0") && wifiConnected) {
+                        detectedUrl = url;
+                        broadcast("running", detectedPin, url);
+                        updateNotification(url);
                     }
                 }
             }
 
-            int exitCode = serverProcess.waitFor();
-            broadcast("stopped", null, null);
+            process.waitFor();
+            // If the bind failed we already broadcast "error" + showed the reason; if the user
+            // stopped the service, stopServerAndSelf already broadcast "stopped".
+            if (!bindFailed && !isStale(generation)) {
+                broadcast("stopped", null, null);
+            }
 
         } catch (Exception e) {
-            if (shutdownRequested) {
+            if (isStale(generation)) {
                 Log.i(TAG, "Server shutdown requested, ignoring interrupt");
             } else {
                 Log.e(TAG, "Server error", e);
                 broadcast("error", null, null);
             }
         } finally {
-            serverStarted = false;
-            if (!shutdownRequested) {
-                stopSelf();
+            // Mark this run finished *before* the (potentially slow) cleanup so a start that
+            // arrives during cleanup can immediately launch a fresh run.
+            boolean shouldStop = false;
+            synchronized (lifecycleLock) {
+                if (runGeneration == generation) {
+                    serverStarted = false;
+                    shouldStop = !shutdownRequested;
+                }
+            }
+            // Close this run's own resources even if a newer run already replaced the fields.
+            if (mediaServer != null) mediaServer.shutdown();
+            if (stdout != null) {
+                try { stdout.close(); } catch (Exception ignored) {}
+            }
+            if (process != null) {
+                process.destroy();
+            }
+            if (shouldStop) {
+                synchronized (lifecycleLock) {
+                    // Re-check under the lock: a newer start may have claimed the service while
+                    // cleanup was running. stopSelf(latest) also refuses to kill a newer start.
+                    if (runGeneration == generation && !shutdownRequested) {
+                        stopSelf(currentStartId);
+                    }
+                }
             }
         }
     }
@@ -613,19 +882,22 @@ public class ServerService extends Service {
     public void onDestroy() {
         super.onDestroy();
         instance = null;
-        shutdownRequested = true;
+        synchronized (lifecycleLock) {
+            shutdownRequested = true;
+            serverStarted = false;
+            runGeneration++;
+            currentStartId = -1;
+        }
+        // Let a reconnecting UI leave the stale "running" state, but never overwrite a real
+        // startup error with "stopped".
+        if (!"error".equals(lastStatus)) {
+            broadcast("stopped", null, null);
+        }
         // Service gone: drop the library summary so a later Activity cannot restore stale stats.
         lastAlbums = 0;
         lastFiles = 0;
         lastTotalSize = 0;
-        if (networkCallback != null) {
-            try {
-                ConnectivityManager cm = (ConnectivityManager)
-                        getApplicationContext().getSystemService(CONNECTIVITY_SERVICE);
-                if (cm != null) cm.unregisterNetworkCallback(networkCallback);
-            } catch (Exception ignored) {}
-            networkCallback = null;
-        }
+        unregisterWifiCallback();
         if (wifiLock != null && wifiLock.isHeld()) {
             wifiLock.release();
         }
@@ -638,7 +910,7 @@ public class ServerService extends Service {
         if (serverProcess != null) {
             serverProcess.destroy();
             try {
-                if (!serverProcess.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                if (!serverProcess.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
                     serverProcess.destroyForcibly();
                 }
             } catch (InterruptedException ignored) {}

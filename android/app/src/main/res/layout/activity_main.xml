@@ -261,6 +261,31 @@
 
         </LinearLayout>
 
+        <!-- Restart service after an explicit stop / startup error -->
+        <Button
+            android:id="@+id/start_btn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_start_service"
+            style="@style/PrimaryButton"
+            android:visibility="gone"
+            android:layout_marginBottom="@dimen/spacing_lg" />
+
+        <!-- Stop service (also available as a notification action) -->
+        <Button
+            android:id="@+id/stop_btn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_stop_service"
+            android:background="@drawable/btn_stop"
+            android:textColor="@color/status_error"
+            android:textSize="@dimen/text_btn"
+            android:textAllCaps="false"
+            android:minHeight="@dimen/btn_height"
+            android:gravity="center"
+            android:visibility="gone"
+            android:layout_marginBottom="@dimen/spacing_lg" />
+
         <!-- Permission Button -->
         <Button
             android:id="@+id/permission_btn"

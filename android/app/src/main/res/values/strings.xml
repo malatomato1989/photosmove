@@ -17,6 +17,7 @@
     <string name="notif_cancelled">Transfer cancelled</string>
     <string name="notif_paused">Transfer paused</string>
     <string name="notif_wifi_required">Please connect to WiFi</string>
+    <string name="notif_stop_action">Stop</string>
 
     <!-- Transfer states -->
     <string name="transfer_done">✓ Transfer complete</string>
@@ -38,8 +39,16 @@
     <string name="btn_copy">Copy</string>
     <string name="btn_copy_done">Copied</string>
     <string name="btn_grant_permission">Grant storage permission</string>
+    <string name="btn_start_service">Start service</string>
+    <string name="btn_stop_service">Stop service</string>
+    <string name="stop_confirm_title">Stop service?</string>
+    <string name="stop_confirm_message">The computer will no longer be able to connect, and any transfer in progress will be interrupted.</string>
+    <string name="stop_confirm_yes">Stop</string>
     <string name="perm_required_message">PhotosMove needs access to Photos and videos to read the photos for transfer. Please grant it under Settings → Permissions.</string>
     <string name="perm_settings_open">Open Settings</string>
+
+    <!-- Port selection is automatic (last port → 1111..9999 → ephemeral) -->
+    <string name="port_allocate_failed">Could not allocate a port. Please try again.</string>
 
     <!-- Privacy (Play compliance: in-app privacy policy entry, opens in system browser) -->
     <string name="privacy_policy">Privacy Policy</string>

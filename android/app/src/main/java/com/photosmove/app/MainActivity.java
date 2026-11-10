@@ -23,6 +23,7 @@ import android.widget.ProgressBar;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.core.content.ContextCompat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -44,6 +45,8 @@ public class MainActivity extends Activity {
     private TextView wifiHint;
     private TextView wifiRequiredWarning;
     private Button permBtn;
+    private Button stopBtn;
+    private Button startBtn;
     private View progressCard;
     private ProgressBar progressBar;
     private TextView progressText;
@@ -81,12 +84,20 @@ public class MainActivity extends Activity {
                         statusDot.setBackgroundResource(R.drawable.status_dot);
                         durationText.setVisibility(View.GONE);
                         wifiRequiredWarning.setVisibility(View.GONE);
+                        stopBtn.setVisibility(View.VISIBLE);
+                        startBtn.setVisibility(View.GONE);
+                        currentUrl = "";
+                        currentPin = "";
+                        urlCard.setVisibility(View.GONE);
+                        pinCard.setVisibility(View.GONE);
                         // A fresh scan is about to run: hide the previous run's library stats.
                         libraryCard.setVisibility(View.GONE);
                         break;
                     case "running":
                         statusText.setText(R.string.status_running);
                         statusDot.setBackgroundResource(R.drawable.status_dot_running);
+                        stopBtn.setVisibility(View.VISIBLE);
+                        startBtn.setVisibility(View.GONE);
                         syncServerStartTime();
                         durationText.setVisibility(View.VISIBLE);
                         durationHandler.removeCallbacks(durationUpdater);
@@ -97,6 +108,8 @@ public class MainActivity extends Activity {
                     case "wifi_required":
                         statusText.setText(R.string.status_wifi_required);
                         statusDot.setBackgroundResource(R.drawable.status_dot_error);
+                        stopBtn.setVisibility(View.VISIBLE);
+                        startBtn.setVisibility(View.GONE);
                         durationHandler.removeCallbacks(durationUpdater);
                         durationText.setVisibility(View.GONE);
                         urlCard.setVisibility(View.GONE);
@@ -106,6 +119,12 @@ public class MainActivity extends Activity {
                     case "stopped":
                         statusText.setText(R.string.status_stopped);
                         statusDot.setBackgroundResource(R.drawable.status_dot);
+                        stopBtn.setVisibility(View.GONE);
+                        startBtn.setVisibility(View.VISIBLE);
+                        currentUrl = "";
+                        currentPin = "";
+                        urlCard.setVisibility(View.GONE);
+                        pinCard.setVisibility(View.GONE);
                         durationHandler.removeCallbacks(durationUpdater);
                         durationText.setVisibility(View.GONE);
                         progressCard.setVisibility(View.GONE);
@@ -116,6 +135,12 @@ public class MainActivity extends Activity {
                     case "error":
                         statusText.setText(R.string.status_error);
                         statusDot.setBackgroundResource(R.drawable.status_dot_error);
+                        stopBtn.setVisibility(View.GONE);
+                        startBtn.setVisibility(View.VISIBLE);
+                        currentUrl = "";
+                        currentPin = "";
+                        urlCard.setVisibility(View.GONE);
+                        pinCard.setVisibility(View.GONE);
                         durationHandler.removeCallbacks(durationUpdater);
                         durationText.setVisibility(View.GONE);
                         progressCard.setVisibility(View.GONE);
@@ -200,6 +225,8 @@ public class MainActivity extends Activity {
         wifiHint = findViewById(R.id.wifi_hint);
         wifiRequiredWarning = findViewById(R.id.wifi_required_warning);
         permBtn = findViewById(R.id.permission_btn);
+        stopBtn = findViewById(R.id.stop_btn);
+        startBtn = findViewById(R.id.start_btn);
         progressCard = findViewById(R.id.progress_card);
         progressBar = findViewById(R.id.progress_bar);
         progressText = findViewById(R.id.progress_text);
@@ -225,6 +252,8 @@ public class MainActivity extends Activity {
         });
 
         permBtn.setOnClickListener(v -> requestStoragePermission());
+        stopBtn.setOnClickListener(v -> confirmStopServer());
+        startBtn.setOnClickListener(v -> startServer());
 
         // Privacy policy entry: tap to open in the system browser (Play compliance: accessible in-app)
         findViewById(R.id.privacy_link).setOnClickListener(v -> {
@@ -237,11 +266,7 @@ public class MainActivity extends Activity {
         });
 
         IntentFilter filter = new IntentFilter(ServerService.ACTION_UPDATE);
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(receiver, filter);
-        }
+        ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
 
         if (hasStoragePermission()) {
             startServer();
@@ -291,24 +316,40 @@ public class MainActivity extends Activity {
         String url = ServerService.getLastUrl();
 
         long albums = ServerService.getLastAlbums();
-        if (albums > 0) {
+        // Library stats are only valid while the service owns a scan result; never show
+        // them in the stopped/error states after a restart.
+        if (albums > 0 && ("running".equals(status) || "starting".equals(status))) {
             showLibrary(albums, ServerService.getLastFiles(), ServerService.getLastTotalSize());
         }
 
-        if (!url.isEmpty()) {
+        // Only the running state owns a usable URL/PIN: showing a cached address after
+        // stop/error would point the user at a dead server.
+        boolean running = "running".equals(status);
+        if (running && !url.isEmpty()) {
             currentUrl = url;
             urlCard.setVisibility(View.VISIBLE);
             urlText.setText(url);
         }
-        if (!pin.isEmpty()) {
+        if (running && !pin.isEmpty()) {
             currentPin = pin;
             pinCard.setVisibility(View.VISIBLE);
             pinText.setText(pin);
         }
         switch (status) {
+            case "starting":
+                statusText.setText(R.string.status_starting);
+                statusDot.setBackgroundResource(R.drawable.status_dot);
+                stopBtn.setVisibility(View.VISIBLE);
+                startBtn.setVisibility(View.GONE);
+                urlCard.setVisibility(View.GONE);
+                pinCard.setVisibility(View.GONE);
+                durationText.setVisibility(View.GONE);
+                break;
             case "running":
                 statusText.setText(R.string.status_running);
                 statusDot.setBackgroundResource(R.drawable.status_dot_running);
+                stopBtn.setVisibility(View.VISIBLE);
+                startBtn.setVisibility(View.GONE);
                 durationText.setVisibility(View.VISIBLE);
                 syncServerStartTime();
                 durationHandler.removeCallbacks(durationUpdater);
@@ -319,6 +360,8 @@ public class MainActivity extends Activity {
             case "wifi_required":
                 statusText.setText(R.string.status_wifi_required);
                 statusDot.setBackgroundResource(R.drawable.status_dot_error);
+                stopBtn.setVisibility(View.VISIBLE);
+                startBtn.setVisibility(View.GONE);
                 urlCard.setVisibility(View.GONE);
                 wifiHint.setVisibility(View.GONE);
                 wifiRequiredWarning.setVisibility(View.VISIBLE);
@@ -326,10 +369,18 @@ public class MainActivity extends Activity {
             case "stopped":
                 statusText.setText(R.string.status_stopped);
                 statusDot.setBackgroundResource(R.drawable.status_dot);
+                stopBtn.setVisibility(View.GONE);
+                startBtn.setVisibility(View.VISIBLE);
+                urlCard.setVisibility(View.GONE);
+                pinCard.setVisibility(View.GONE);
                 break;
             case "error":
                 statusText.setText(R.string.status_error);
                 statusDot.setBackgroundResource(R.drawable.status_dot_error);
+                stopBtn.setVisibility(View.GONE);
+                startBtn.setVisibility(View.VISIBLE);
+                urlCard.setVisibility(View.GONE);
+                pinCard.setVisibility(View.GONE);
                 break;
             default:
                 break;
@@ -495,7 +546,18 @@ public class MainActivity extends Activity {
     }
 
     private void startServer() {
+        if (!hasStoragePermission()) {
+            // Start button can outlive a permission revocation (stopped state): route back
+            // to the permission flow instead of running a photo-less server.
+            permBtn.setVisibility(View.VISIBLE);
+            startBtn.setVisibility(View.GONE);
+            stopBtn.setVisibility(View.GONE);
+            statusText.setText(R.string.status_idle);
+            return;
+        }
         permBtn.setVisibility(View.GONE);
+        startBtn.setVisibility(View.GONE);
+        stopBtn.setVisibility(View.VISIBLE);
         statusText.setText(R.string.status_starting);
 
         Intent intent = new Intent(this, ServerService.class);
@@ -504,6 +566,41 @@ public class MainActivity extends Activity {
         } else {
             startService(intent);
         }
+    }
+
+    private void confirmStopServer() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.stop_confirm_title)
+                .setMessage(R.string.stop_confirm_message)
+                .setPositiveButton(R.string.stop_confirm_yes, (d, w) -> stopServer())
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void stopServer() {
+        Intent intent = new Intent(this, ServerService.class);
+        intent.setAction(ServerService.ACTION_STOP);
+        try {
+            startService(intent);
+        } catch (Exception ignored) {
+            // Background-start restrictions: the service is already unreachable; reflect
+            // the stopped state without crashing.
+        }
+        statusText.setText(R.string.status_stopped);
+        statusDot.setBackgroundResource(R.drawable.status_dot);
+        stopBtn.setVisibility(View.GONE);
+        startBtn.setVisibility(View.VISIBLE);
+        currentUrl = "";
+        currentPin = "";
+        urlCard.setVisibility(View.GONE);
+        pinCard.setVisibility(View.GONE);
+        progressCard.setVisibility(View.GONE);
+        libraryCard.setVisibility(View.GONE);
+        wifiHint.setVisibility(View.GONE);
+        wifiRequiredWarning.setVisibility(View.GONE);
+        durationHandler.removeCallbacks(durationUpdater);
+        durationText.setVisibility(View.GONE);
+        serverStartTime = 0;
     }
 
     private void copyToClipboard(String label, String text) {

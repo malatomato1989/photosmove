@@ -14,10 +14,15 @@ import (
 
 var version = "dev"
 
+// easyPorts are tried in order when the preferred port is unavailable. They are
+// deliberately easy to type on a phone/PC. 6666 is intentionally excluded: Chromium
+// (Chrome/Edge) blocks it as an unsafe port, which would make the URL unusable.
+var easyPorts = []int{1111, 2222, 3333, 4444, 5555, 6789, 7777, 8888, 9999}
+
 func main() {
 	roots := flag.String("roots", "", "comma-separated roots to discover albums from (e.g. /sdcard/DCIM,/sdcard/Pictures)")
 	webDir := flag.String("web", "", "web UI directory (default: ../web)")
-	port := flag.Int("port", 8080, "listen port")
+	port := flag.Int("port", 0, "preferred listen port (0 = auto-select from the built-in easy-port pool)")
 	lanIPFlag := flag.String("lan-ip", "", "LAN IP address (auto-detected if empty)")
 	mediaDB := flag.String("media-db", "", "MediaStore JSON file for media files")
 	mediaPort := flag.Int("media-port", 0, "Java media file server port")
@@ -44,15 +49,64 @@ func main() {
 	mux := http.NewServeMux()
 	handler := registerHandlers(mux, pin, token, albums, *webDir, *mediaPort)
 
+	// Preferred (last successful port from the previous run) → easy-to-type pool →
+	// OS-assigned ephemeral port. The last candidate guarantees startup even when every
+	// easy port is occupied.
+	candidates := append(append([]int{}, easyPorts...), 0)
+	ln, actualPort, err := listenWithFallback(*port, candidates)
+	if err != nil {
+		// Keep this machine-readable: ServerService parses the line and shows a
+		// localized startup-error message instead of a silent "stopped".
+		log.Printf("ERROR:PORT_UNAVAILABLE %v", err)
+		os.Exit(1)
+	}
+	defer ln.Close()
+
 	lanIP := *lanIPFlag
 	if lanIP == "" {
 		lanIP = getLANIP()
 	}
 
-	addr := fmt.Sprintf("0.0.0.0:%d", *port)
 	log.Printf("PIN: %s", pin)
-	log.Printf("photosmove server listening on http://%s:%d", lanIP, *port)
-	log.Fatal(http.ListenAndServe(addr, handler))
+	// ServerService parses PORT to build the URL shown on the phone. Emit it before
+	// the human-readable listening line so the port is known as early as possible.
+	log.Printf("PORT:%d", actualPort)
+	log.Printf("photosmove server listening on http://%s:%d", lanIP, actualPort)
+	if err := http.Serve(ln, handler); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// listenWithFallback binds the preferred port, then each fallback in order. A
+// fallback value of 0 asks the OS for an ephemeral port (used by tests).
+func listenWithFallback(preferred int, fallback []int) (net.Listener, int, error) {
+	candidates := make([]int, 0, len(fallback)+1)
+	seen := make(map[int]bool, len(fallback)+1)
+	if preferred > 0 {
+		candidates = append(candidates, preferred)
+		seen[preferred] = true
+	}
+	for _, p := range fallback {
+		if p < 0 || seen[p] {
+			continue
+		}
+		candidates = append(candidates, p)
+		seen[p] = true
+	}
+
+	var lastErr error
+	for _, p := range candidates {
+		ln, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", p))
+		if err == nil {
+			return ln, ln.Addr().(*net.TCPAddr).Port, nil
+		}
+		lastErr = err
+		log.Printf("port %d unavailable: %v", p, err)
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no candidate ports")
+	}
+	return nil, 0, lastErr
 }
 
 func splitAndTrim(s string) []string {

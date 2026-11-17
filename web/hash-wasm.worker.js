@@ -27,17 +27,25 @@ async function getHasher() {
     return hasherPromise;
 }
 
-async function hashBlob(file) {
+async function hashBlob(file, id) {
     const hasher = await getHasher();
     hasher.init();
-    const chunkSize = 1 * 1024 * 1024; // 1 MB
+    const chunkSize = 4 * 1024 * 1024; // 4 MB
+    const progressEvery = 32 * 1024 * 1024; // report in-flight bytes every 32 MB
     let offset = 0;
+    let lastReported = 0;
     while (offset < file.size) {
         const end = Math.min(offset + chunkSize, file.size);
         const slice = file.slice(offset, end);
         const buf = await slice.arrayBuffer();
         hasher.update(new Uint8Array(buf));
         offset = end;
+        // Let the UI include bytes of large files still being hashed (otherwise the
+        // displayed MB/s only moves when a whole file finishes).
+        if (id != null && offset - lastReported >= progressEvery) {
+            self.postMessage({ type: 'progress', id, bytes: offset });
+            lastReported = offset;
+        }
     }
     return hasher.digest('hex');
 }
@@ -47,7 +55,7 @@ self.onmessage = async (ev) => {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'hash') {
         try {
-            const sha256 = await hashBlob(msg.file);
+            const sha256 = await hashBlob(msg.file, msg.id);
             self.postMessage({
                 type: 'hashed',
                 id: msg.id,

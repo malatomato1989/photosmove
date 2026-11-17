@@ -101,7 +101,7 @@ window.PHOTOSMOVE_I18N.zh = {
         // --- verify (校验工具, verify.js 全流程文案) ---
         verify_cancelled: '已取消',
         verify_stage1: '阶段 1/2 大小预筛: {i} / {n}',
-        verify_stage2: '阶段 2/2 字节级校验: {i} / {n} 个文件',
+        verify_stage2: '阶段 2/2 字节级校验: {i} / {n} 个文件 · {speed} · 剩余 {eta} · 当前 {current} · {workers}W',
         verify_result_title: '校验结果 ({source})',
         verify_ok: '✔ 字节级完整: {count} 个文件',
         verify_corrupted: '✗ 字节损坏: {count} 个文件 (大小一致但 SHA-256 不符)',

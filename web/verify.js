@@ -19,7 +19,7 @@
 //
 // Large files without blowing memory: readZipEntry is only used for manifest.json (a few
 // KB). Per-entry SHA-256 takes a separate path — getDataStart reads only the 30-byte local
-// header, then file.slice yields a Blob (reference); the Worker hashes it in 1MB streaming
+// header, then file.slice yields a Blob (reference); the Worker hashes it in 4MB streaming
 // chunks, peak memory ~1MB.
 //
 // Cancel: the user can click [Cancel] anytime → terminate the Worker (all pending promises
@@ -114,6 +114,14 @@
         return (b / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
     }
 
+    function fmtEta(seconds) {
+        if (!isFinite(seconds) || seconds <= 0) return '--';
+        if (seconds < 60) return Math.ceil(seconds) + 's';
+        const m = Math.floor(seconds / 60);
+        const s = Math.ceil(seconds % 60);
+        return m + 'm ' + String(s).padStart(2, '0') + 's';
+    }
+
     function escapeHtml(s) {
         return String(s).replace(/[&<>"']/g, c => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -166,43 +174,104 @@
         }
 
         // ===== Stage 2: byte-level SHA-256 (for size-matching entries) =====
+        // Files are hashed by a small Worker pool: SHA-256 is CPU-bound per file and the
+        // entries are independent, so up to 8 workers overlap hashing with disk reads. UI updates
+        // are throttled (no per-file setTimeout): 4394 timers/repaints would add many seconds.
         if (sizeMatched.length > 0) {
             ensureHasher();
             const total = sizeMatched.length;
-            for (let i = 0; i < total; i++) {
-                if (cancelled) break;
-                const { entry, f } = sizeMatched[i];
+            const totalBytes = sizeMatched.reduce((s, { entry }) => s + (entry.size || 0), 0);
+            const startedAt = performance.now();
+            const concurrency = Math.max(1, hasherPoolSize);
+            let nextIndex = 0;
+            let completed = 0;
+            let doneBytes = 0;
+            let firstError = null;
+            let lastPaint = 0;
 
-                if (!entry.sha256) {
-                    // manifest has no sha256 on record — size matches only; byte-level
-                    // verification impossible.
-                    sizeOnly++;
-                } else {
-                    let sha = null;
+            const paint = (force) => {
+                const now = performance.now();
+                if (!force && now - lastPaint < 100) return false;
+                lastPaint = now;
+                const elapsed = Math.max(0.001, (now - startedAt) / 1000);
+                // Include bytes already hashed by in-flight jobs; otherwise large files make
+                // the displayed MB/s look frozen until the whole file completes.
+                let inFlightBytes = 0;
+                let maxInFlight = 0;
+                for (const slot of hasherWorkers) {
+                    if (!slot.current) continue;
+                    inFlightBytes += slot.current.bytes || 0;
+                    maxInFlight = Math.max(maxInFlight, slot.current.size || 0);
+                }
+                const liveDone = doneBytes + inFlightBytes;
+                // Progress bar follows bytes (so a 600MB file visibly advances), while the
+                // text still reports completed file count.
+                const pct = totalBytes > 0 ? Math.round((liveDone / totalBytes) * 100) : 100;
+                if (progressFill) progressFill.style.width = pct + '%';
+                const speed = liveDone / elapsed;
+                const remaining = Math.max(0, totalBytes - liveDone);
+                const stage = {
+                    i: completed,
+                    n: total,
+                    speed: speed > 0 ? fmtSize(speed) + '/s' : '--',
+                    eta: speed > 0 ? fmtEta(remaining / speed) : '--',
+                    current: maxInFlight > 0 ? fmtSize(maxInFlight) : '--',
+                    workers: hasherPoolSize,
+                };
+                verifyState = { phase: 'stage2', stage, summary: verifyState.summary };
+                if (progressText) progressText.textContent = I18N.t('verify_stage2', stage);
+                return true;
+            };
+            paint(true);
+
+            const workerLoop = async () => {
+                while (!cancelled && !firstError) {
+                    const idx = nextIndex++;
+                    if (idx >= total) break;
+                    const { entry, f } = sizeMatched[idx];
                     try {
-                        const dataStart = await getDataStart(file, f);
-                        // The Blob is a reference (not read into memory); the Worker hashes
-                        // it internally in 1MB streaming chunks.
-                        const entryBlob = file.slice(dataStart, dataStart + entry.size);
-                        sha = await hashEntry(entryBlob);
+                        if (!entry.sha256) {
+                            // manifest has no sha256 on record — size matches only.
+                            sizeOnly++;
+                        } else {
+                            const dataStart = await getDataStart(file, f);
+                            if (cancelled || firstError) break;
+                            // The Blob is a reference (not read into memory); the Worker hashes
+                            // it internally in 4MB streaming chunks.
+                            const entryBlob = file.slice(dataStart, dataStart + entry.size);
+                            const sha = await hashEntry(entryBlob, entry.size, () => paint(false));
+                            if (cancelled) break;
+                            if (sha === entry.sha256) {
+                                byteOk++;
+                            } else {
+                                corrupted++;
+                                corruptedFiles.push({ path: entry.path, expected: entry.sha256, actual: sha });
+                            }
+                        }
+                        doneBytes += entry.size || 0;
+                        completed++;
+                        if (paint(false)) {
+                            // Give the browser a chance to paint at most every 100ms.
+                            await new Promise(r => setTimeout(r, 0));
+                        }
                     } catch (err) {
                         if (cancelled) break;
-                        throw err;
-                    }
-                    if (cancelled) break;
-                    if (sha === entry.sha256) {
-                        byteOk++;
-                    } else {
-                        corrupted++;
-                        corruptedFiles.push({ path: entry.path, expected: entry.sha256, actual: sha });
+                        if (!firstError) {
+                            firstError = err;
+                            // Abort the other workers' in-flight hashes immediately rather
+                            // than waiting for them before surfacing the error.
+                            destroyHasher();
+                        }
+                        break;
                     }
                 }
+            };
 
-                const pct = Math.round(((i + 1) / total) * 100);
-                if (progressFill) progressFill.style.width = pct + '%';
-                verifyState = { phase: 'stage2', stage: { i: i + 1, n: total }, summary: verifyState.summary };
-                if (progressText) progressText.textContent = I18N.t('verify_stage2', { i: i + 1, n: total });
-                await new Promise(r => setTimeout(r, 0));
+            await Promise.all(Array.from({ length: concurrency }, workerLoop));
+            paint(true);
+            if (firstError && !cancelled) {
+                destroyHasher();
+                throw firstError;
             }
         }
 
@@ -262,53 +331,91 @@
         if (progressBox) progressBox.classList.add('hidden');
     }
 
-    // ============== hash-wasm Worker management (byte-level SHA-256) ==============
+    // ============== hash-wasm Worker pool (byte-level SHA-256) ==============
     //
-    // A single Worker processes entries serially: simple + avoids pulling multiple large
-    // Blobs into memory concurrently. Each entry postMessages one Blob (a reference, not a
-    // full copy); the Worker hashes it in 1MB streaming chunks. Promise + id correlation
-    // (Map<id, resolve/reject>); on cancel, terminate the Worker and reject all pending,
-    // then ensureHasher() rebuilds it on the next run.
-    let hasherWorker = null;
+    // SHA-256 is CPU-bound per file and entries are independent, so several workers hash
+    // concurrently (default up to 8, capped by hardwareConcurrency; ?verifyWorkers=N overrides
+    // for A/B testing). Each worker processes exactly one
+    // Blob at a time; the main thread keeps a queue of Blob references (not copies). On
+    // cancel/error, terminate all workers and reject queued + in-flight promises; the next
+    // run rebuilds the pool.
+    let hasherWorkers = [];       // [{ worker, busy, current }]
+    let hasherPoolSize = 0;
     let nextHashId = 1;
-    const pendingHashes = new Map(); // id → { resolve, reject }
+    const hashQueue = [];
+
+    function pickPoolSize() {
+        // Diagnostic A/B override: ?verifyWorkers=1 / 4 / 8 / ... (1–32).
+        let forced = 0;
+        try {
+            forced = parseInt(new URLSearchParams(location.search).get('verifyWorkers'), 10);
+        } catch (e) {}
+        if (Number.isFinite(forced) && forced >= 1 && forced <= 32) return forced;
+        const hc = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2;
+        return Math.max(1, Math.min(8, hc));
+    }
 
     function ensureHasher() {
-        if (hasherWorker) return hasherWorker;
-        hasherWorker = new Worker('hash-wasm.worker.js');
-        hasherWorker.onmessage = (ev) => {
-            const msg = ev.data;
-            if (!msg || typeof msg !== 'object') return;
-            const p = pendingHashes.get(msg.id);
-            if (!p) return;
-            pendingHashes.delete(msg.id);
-            if (msg.error) p.reject(new Error(msg.error));
-            else p.resolve(msg.sha256);
-        };
-        hasherWorker.onerror = (e) => {
-            const err = new Error(String((e && e.message) || 'hash worker error'));
-            for (const [, p] of pendingHashes) p.reject(err);
-            pendingHashes.clear();
-        };
-        return hasherWorker;
-    }
-
-    function destroyHasher() {
-        if (hasherWorker) {
-            hasherWorker.terminate();
-            hasherWorker = null;
+        if (hasherWorkers.length > 0) return;
+        hasherPoolSize = pickPoolSize();
+        for (let i = 0; i < hasherPoolSize; i++) {
+            const worker = new Worker('hash-wasm.worker.js?v=20261110d');
+            const slot = { worker, busy: false, current: null };
+            worker.onmessage = (ev) => {
+                const msg = ev.data;
+                if (!msg || typeof msg !== 'object') return;
+                const job = slot.current;
+                if (!job || msg.id !== job.id) return;
+                if (msg.type === 'progress') {
+                    // Bytes of a large file already hashed but not yet "completed".
+                    job.bytes = msg.bytes || job.bytes;
+                    if (job.onProgress) job.onProgress();
+                    return;
+                }
+                slot.busy = false;
+                slot.current = null;
+                if (msg.error) job.reject(new Error(msg.error));
+                else job.resolve(msg.sha256);
+                pumpHashQueue();
+            };
+            worker.onerror = (e) => {
+                destroyHasher(new Error(String((e && e.message) || 'hash worker error')));
+            };
+            hasherWorkers.push(slot);
         }
-        // terminate() does not fire onmessage → proactively reject all in-flight promises
-        // to wake up their awaits.
-        for (const [, p] of pendingHashes) p.reject(new Error('cancelled'));
-        pendingHashes.clear();
     }
 
-    function hashEntry(blob) {
+    function pumpHashQueue() {
+        if (hashQueue.length === 0) return;
+        for (const slot of hasherWorkers) {
+            if (slot.busy || hashQueue.length === 0) continue;
+            const job = hashQueue.shift();
+            slot.busy = true;
+            slot.current = job;
+            slot.worker.postMessage({ type: 'hash', id: job.id, file: job.blob });
+        }
+    }
+
+    function destroyHasher(reason) {
+        const err = reason instanceof Error ? reason : new Error('cancelled');
+        for (const slot of hasherWorkers) {
+            try { slot.worker.terminate(); } catch (e) {}
+            if (slot.current) slot.current.reject(err);
+            slot.busy = false;
+            slot.current = null;
+        }
+        hasherWorkers = [];
+        hasherPoolSize = 0;
+        while (hashQueue.length > 0) {
+            hashQueue.shift().reject(err);
+        }
+    }
+
+    function hashEntry(blob, size, onProgress) {
         const id = nextHashId++;
         return new Promise((resolve, reject) => {
-            pendingHashes.set(id, { resolve, reject });
-            hasherWorker.postMessage({ type: 'hash', id, file: blob });
+            hashQueue.push({ id, blob, size: size || blob.size, bytes: 0, onProgress, resolve, reject });
+            pumpHashQueue();
         });
     }
 

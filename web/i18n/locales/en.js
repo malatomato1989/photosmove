@@ -98,7 +98,7 @@ window.PHOTOSMOVE_I18N.en = {
         // --- verify (verification tool, verify.js full flow) ---
         verify_cancelled: 'Cancelled',
         verify_stage1: 'Stage 1/2 size pre-check: {i} / {n}',
-        verify_stage2: 'Stage 2/2 byte-level check: {i} / {n} files',
+        verify_stage2: 'Stage 2/2 byte-level check: {i} / {n} files · {speed} · {eta} left · current {current} · {workers}W',
         verify_result_title: 'Verification result ({source})',
         verify_ok: '✔ Byte-level intact: {count} files',
         verify_corrupted: '✗ Corrupted: {count} files (size matches but SHA-256 differs)',

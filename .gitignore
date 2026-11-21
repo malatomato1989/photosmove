@@ -75,3 +75,9 @@ docs/play-store-compliance.md
 # Website (site/)
 site/downloads/*.apk
 !site/assets/**/*.png
+
+# Local UI design mockups (not for release)
+docs/b4-album-selection-ui.html
+docs/b4-verify-privacy-ui.html
+docs/b4-verify-privacy-v2.html
+docs/current-ui-preview.html

@@ -12,7 +12,7 @@
          malformed XML that browsers cannot render → no tab icon -->
     <link rel="icon" type="image/png" sizes="256x256" href="logo.png?v=20260910">
     <link rel="apple-touch-icon" href="logo.png?v=20260910">
-    <link rel="stylesheet" href="style.css?v=20260719b">
+    <link rel="stylesheet" href="style.css?v=20261120g">
 </head>
 <body>
     <div id="app">
@@ -59,6 +59,7 @@
                     </div>
                 </div>
                 <div class="topbar-right">
+                    <span class="local-pill"><span>🔒</span><span data-i18n="local_direct">Local only</span></span>
                     <!-- Language switch entry (dashboard, D6/E: still switchable after entering the download page) -->
                     <div class="lang-switch" data-lang-switch style="display:flex;align-items:center;gap:5px;padding:6px 12px;background:rgba(99,102,241,0.1);border-radius:20px;cursor:pointer;font-size:13px;color:#4f46e5;user-select:none">
                         <span>🌐</span><span data-lang-label>EN</span>
@@ -74,13 +75,17 @@
             <div class="dashboard-grid">
                 <!-- ========== LEFT: Main ========== -->
                 <main class="main-area">
-                    <!-- Album card -->
+                    <!-- Album selection card -->
                     <div class="main-card">
-                        <div class="thumb-row" id="thumb-row"></div>
-                        <div class="card-head">
-                            <h2 id="card-title" class="card-title" data-i18n="card_title">All albums</h2>
-                            <p id="card-desc" class="card-desc">Loading albums…</p>
-                            <p class="card-scope-hint" data-i18n="card_scope_hint">Includes all albums (screenshots & app images)</p>
+                        <div class="selection-head" id="selection-head">
+                            <div>
+                                <h1 class="selection-title" data-i18n="selection_title">Choose albums to move</h1>
+                                <p class="privacy-inline">
+                                    <span class="privacy-icon">🔒</span>
+                                    <span data-i18n="privacy_inline">Local transfer · Photos move only between your phone and computer — never uploaded to any cloud</span>
+                                    <a data-i18n="privacy_link" href="https://github.com/malatomato1989/photosmove/blob/main/docs/privacy.md" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+                                </p>
+                            </div>
                         </div>
 
                         <div id="progress-section" class="progress-section hidden">
@@ -99,33 +104,55 @@
                         </div>
 
                         <div id="done-badge" class="done-badge hidden" data-i18n="done_badge">✓ Transfer complete</div>
-                        <div id="cancel-badge" class="cancel-badge hidden" data-i18n="cancel_badge">Cancelled</div>
-                    </div>
-
-                    <!-- Actions row: download + verify on one row -->
-                    <div class="actions-row">
-                        <button id="btn-download" class="btn-primary btn-large" disabled>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                            <span data-i18n="btn_loading">Loading...</span>
-                        </button>
-                        <button id="btn-verify" class="tool-btn">
-                            <div class="tool-icon">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                        <div id="done-verify" class="done-verify hidden">
+                            <div class="done-verify-copy">
+                                <strong data-i18n="done_verify_title">Next: verify the ZIP</strong>
+                                <span data-i18n="done_verify_sub">Confirm byte-level integrity before you delete the phone copies</span>
                             </div>
-                            <span class="tool-name" data-i18n="btn_verify">Verify downloaded ZIP</span>
-                        </button>
-                    </div>
-
-                    <!-- Verify panel (shown when expanded) -->
-                    <div id="verify-panel" class="verify-panel hidden">
-                        <input id="verify-zip-input" type="file" accept=".zip,application/zip,application/x-zip-compressed" style="display:none" />
-                        <div id="verify-summary" class="verify-summary"></div>
-                        <div id="verify-progress" class="verify-progress hidden">
-                            <div class="verify-progress-bar"><div id="verify-progress-fill"></div></div>
-                            <span id="verify-progress-text"></span>
-                            <button id="verify-cancel" class="btn-cancel" data-i18n="verify_cancel">Cancel</button>
+                            <div class="done-verify-actions">
+                                <span id="verified-badge" class="verified-badge hidden" data-i18n="verified_badge">✓ ZIP verified</span>
+                                <button id="btn-verify-done" class="btn-primary" type="button" data-i18n="done_verify_btn">Verify the downloaded ZIP</button>
+                            </div>
                         </div>
-                        <ul id="verify-results" class="verify-results"></ul>
+                        <div id="cancel-badge" class="cancel-badge hidden" data-i18n="cancel_badge">Cancelled</div>
+
+                        <div class="album-toolbar">
+                            <div class="selection-count" id="selection-count" aria-live="polite"></div>
+                            <div class="toolbar-actions">
+                                <button id="select-all" class="text-btn" type="button" data-i18n="select_all" disabled>Select all</button>
+                                <button id="clear-all" class="text-btn" type="button" data-i18n="clear_all" disabled>Clear</button>
+                                <label class="search-box">
+                                    <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+                                    <input id="album-search" type="search" placeholder="Search albums" autocomplete="off">
+                                    <button class="search-clear hidden" id="clear-search" type="button" aria-label="Clear search">
+                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                                    </button>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div id="album-grid" class="album-grid"></div>
+
+                        <div id="album-empty" class="empty-state hidden">
+                            <strong data-i18n="search_empty_title">No matching albums</strong>
+                            <span data-i18n="search_empty_hint">Try a different keyword</span>
+                            <button id="empty-clear" type="button" data-i18n="clear_search">Clear search</button>
+                        </div>
+
+                        <div class="selection-footer">
+                            <div class="footer-summary">
+                                <strong id="footer-count"></strong>
+                            </div>
+                            <div class="footer-actions">
+                                <button id="btn-verify" class="btn-ghost" type="button">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                                    <span data-i18n="btn_verify">Verify downloaded ZIP</span>
+                                </button>
+                                <button id="btn-download" class="btn-primary" type="button" disabled>
+                                    <span data-i18n="btn_loading">Loading...</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Console -->
@@ -139,17 +166,49 @@
                         </div>
                     </div>
 
-                    <!-- Privacy policy entry (Play compliance: accessible in-app) -->
-                    <a class="privacy-footer" data-i18n="privacy_footer" href="https://github.com/malatomato1989/photosmove/blob/main/docs/privacy.md" target="_blank" rel="noopener noreferrer">🔒 Privacy Policy · Photos move only between your phone and computer — never uploaded to any cloud</a>
                 </main>
 
             </div>
         </div>
     </div>
-    <script src="i18n/locales/zh.js?v=20261110c"></script>
-    <script src="i18n/locales/en.js?v=20261110c"></script>
+    <div id="verify-dialog" class="verify-dialog-mask hidden" role="dialog" aria-modal="true" aria-labelledby="verify-dialog-title">
+        <div class="verify-dialog">
+            <div class="verify-dialog-head">
+                <div>
+                    <div class="verify-dialog-eyebrow" data-i18n="verify_dialog_eyebrow">LOCAL VERIFICATION</div>
+                    <h2 id="verify-dialog-title" data-i18n="verify_dialog_title">Verify downloaded ZIP</h2>
+                </div>
+                <button id="verify-dialog-close" class="verify-dialog-close" type="button" aria-label="Close">×</button>
+            </div>
+            <div class="verify-dialog-note" data-i18n="verify_dialog_note">Verification runs locally in your browser. The ZIP is never uploaded.</div>
+            <div id="verify-dialog-idle">
+                <button id="verify-choose" class="verify-drop" type="button">
+                    <span class="verify-drop-icon">📄</span>
+                    <strong data-i18n="verify_choose">Choose ZIP file</strong>
+                    <span data-i18n="verify_choose_hint">Verification starts automatically after selection</span>
+                </button>
+                <div class="verify-actions">
+                    <button id="verify-idle-cancel" class="btn-ghost" type="button" data-i18n="verify_cancel">Cancel</button>
+                </div>
+            </div>
+            <div id="verify-panel" class="verify-panel hidden">
+                <input id="verify-zip-input" type="file" accept=".zip,application/zip,application/x-zip-compressed" style="display:none" />
+                <div id="verify-summary" class="verify-summary"></div>
+                <div id="verify-progress" class="verify-progress hidden">
+                    <div class="verify-progress-bar"><div id="verify-progress-fill"></div></div>
+                    <span id="verify-progress-text"></span>
+                    <button id="verify-cancel" class="btn-cancel" data-i18n="verify_cancel">Cancel</button>
+                </div>
+                <ul id="verify-results" class="verify-results"></ul>
+            </div>
+            <div class="verify-dialog-footer" data-i18n="verify_dialog_footer">No ZIP upload · No cloud access · Results stay on this device</div>
+        </div>
+    </div>
+
+    <script src="i18n/locales/zh.js?v=20261120e"></script>
+    <script src="i18n/locales/en.js?v=20261120e"></script>
     <script src="i18n/i18n.js?v=20260722a"></script>
-    <script src="app.js?v=20260722a"></script>
-    <script src="verify.js?v=20261110d"></script>
+    <script src="app.js?v=20261120f"></script>
+    <script src="verify.js?v=20261120f"></script>
 </body>
 </html>

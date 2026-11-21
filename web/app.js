@@ -32,8 +32,15 @@
     // Auto-focus the PIN input when entering the PIN page (saves the user a tap)
     if (connectView && !connectView.classList.contains('hidden')) { setTimeout(() => pinInput.focus(), 50); }
     const connectError = document.getElementById('connect-error');
-    const cardTitle = document.getElementById('card-title');
-    const cardDesc = document.getElementById('card-desc');
+    const selectionCount = document.getElementById('selection-count');
+    const albumGrid = document.getElementById('album-grid');
+    const albumSearch = document.getElementById('album-search');
+    const clearSearch = document.getElementById('clear-search');
+    const albumEmpty = document.getElementById('album-empty');
+    const emptyClear = document.getElementById('empty-clear');
+    const selectAllBtn = document.getElementById('select-all');
+    const clearAllBtn = document.getElementById('clear-all');
+    const footerCount = document.getElementById('footer-count');
     const progressSection = document.getElementById('progress-section');
     const progressBar = document.getElementById('progress-bar');
     const progressPct = document.getElementById('progress-pct');
@@ -42,9 +49,18 @@
     const progressDownloaded = document.getElementById('progress-downloaded');
     const progressAlbum = document.getElementById('progress-album');
     const doneBadge = document.getElementById('done-badge');
+    const doneVerify = document.getElementById('done-verify');
+    const verifiedBadge = document.getElementById('verified-badge');
     const btnDownload = document.getElementById('btn-download');
+    const btnVerifyDone = document.getElementById('btn-verify-done');
+    const btnVerify = document.getElementById('btn-verify');
     const consoleToggle = document.getElementById('console-toggle');
     const consoleBox = document.getElementById('console-box');
+
+    if (!albumGrid || !albumSearch || !selectionCount) {
+        document.body.innerHTML = '<div style="padding:40px;font-family:system-ui,sans-serif;text-align:center;color:#991b1b">页面版本过旧，请刷新页面重新加载。<br><br>Page is outdated. Please reload.</div>';
+        return;
+    }
 
     // --- i18n init (group 3.5/5.4): apply static copy + bind the language switch entry ---
     // Guard: if i18n.js fails to load, I18N is undefined — app.js must not crash at the top
@@ -57,11 +73,10 @@
     }
     I18N.applyToDOM();
     refreshLangLabels();
-    // card-desc / progress-downloaded are managed dynamically by app.js: applyToDOM must
-    // not overwrite them on locale change (otherwise progress falls back to "0 B / 0 B").
-    // So index.html carries no data-i18n on them; the initial copy is set explicitly here
-    // once, then updateCard / applyProgress take over.
-    cardDesc.textContent = I18N.t('card_desc_loading');
+    // Dynamic selection/progress copy is managed by app.js. The initial placeholders are
+    // set here once, then updateCard / applyProgress take over.
+    albumSearch.placeholder = I18N.t('search_albums');
+    clearSearch.setAttribute('aria-label', I18N.t('clear_search'));
     progressDownloaded.textContent = I18N.t('progress_init');
     document.querySelectorAll('[data-lang-switch]').forEach(function (el) {
         el.addEventListener('click', showLangPicker);
@@ -132,30 +147,9 @@
     }
 
     function refreshDynamicText() {
-        // card-desc (no data-i18n, managed by updateCard): must match updateCard's branch,
-        // otherwise a locale change would overwrite the stats line with the loading copy.
-        if (!cachedAlbums || cachedAlbums.length === 0) {
-            cardDesc.textContent = I18N.t('no_photos');
-        } else {
-            const totalFiles = cachedAlbums.reduce((s, a) => s + a.file_count, 0);
-            const totalSize = cachedAlbums.reduce((s, a) => s + a.total_size, 0);
-            cardDesc.innerHTML = I18N.t('card_files_albums_html', { count: totalFiles.toLocaleString(), albums: cachedAlbums.length, size: formatSize(totalSize) });
-        }
-
-        // Button: consistent with updateCard — downloading→cancel, complete→redownload,
-        // no albums→nothing_to_download, otherwise→download_all.
-        // Do not call updateCard — in the success state it would overwrite redownload
-        // back to download_all.
-        if (downloading) {
-            btnDownload.textContent = I18N.t('cancel_transfer');
-        } else if (dlState.mode === 'complete') {
-            btnDownload.textContent = I18N.t('redownload');
-        } else if (!cachedAlbums || cachedAlbums.length === 0) {
-            btnDownload.textContent = I18N.t('nothing_to_download');
-        } else {
-            const totalSize = cachedAlbums.reduce((s, a) => s + a.total_size, 0);
-            btnDownload.textContent = I18N.t('download_all', { size: formatSize(totalSize) });
-        }
+        albumSearch.placeholder = I18N.t('search_albums');
+        clearSearch.setAttribute('aria-label', I18N.t('clear_search'));
+        updateSelectionUI();
 
         // Dynamic elements in the progress section (no data-i18n): re-render only while
         // the progress section is visible (covers downloading/success/interrupted).
@@ -169,6 +163,15 @@
 
         // verify.js dynamic elements (no data-i18n, separate IIFE): call when the
         // rerender hook is exposed.
+        if (dlState.mode === 'complete') {
+            doneBadge.textContent = I18N.t('done_albums_badge', { count: selectedAlbumCount });
+        }
+        if (!cancelBadge.classList.contains('hidden')) {
+            cancelBadge.textContent = cancelBadge.dataset.reason === 'incomplete'
+                ? I18N.t('download_incomplete')
+                : I18N.t('cancel_selection_badge');
+        }
+
         if (window.photosmoveVerify && typeof window.photosmoveVerify.rerender === 'function') {
             window.photosmoveVerify.rerender();
         }
@@ -180,6 +183,13 @@
 
     function onLocaleChange() {
         refreshDynamicText();
+    }
+
+    function fetchWithTimeout(url, options, timeoutMs) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        return fetch(url, Object.assign({}, options, { signal: controller.signal, cache: 'no-store' }))
+            .finally(() => clearTimeout(timer));
     }
 
     // --- Connect ---
@@ -194,11 +204,11 @@
 
         const authUrl = `${serverUrl}/api/auth`;
         try {
-            const res = await fetch(authUrl, {
+            const res = await fetchWithTimeout(authUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pin }),
-            });
+            }, 10000);
             if (!res.ok) {
                 // 4.3 ①: server error-code contract → I18N.te(code); unknown codes pass through
                 let errMsg = I18N.t('err_server_status', { status: res.status });
@@ -211,8 +221,9 @@
         } catch (err) {
             // 4.3 ③: fetch network-layer failure (TypeError, no response body, e.g. Failed
             // to fetch) → localized copy
-            const isNetworkErr = err instanceof TypeError;
-            const displayMsg = isNetworkErr ? I18N.t('network_error') : (err.message || I18N.t('err_default'));
+            const isTimeout = err && err.name === 'AbortError';
+            const isNetworkErr = err instanceof TypeError || isTimeout;
+            const displayMsg = isTimeout ? I18N.t('connect_timeout') : (isNetworkErr ? I18N.t('network_error') : (err.message || I18N.t('err_default')));
             const hint = isNetworkErr ? '<div class="err-hint">' + I18N.t('err_network_hint') + '</div>' : '';
             connectError.innerHTML = `
                 <div class="err-title">${displayMsg}</div>
@@ -255,70 +266,287 @@
 
     async function loadAlbums() {
         try {
-            const res = await fetch(`${serverUrl}/api/albums`, {
+            const res = await fetchWithTimeout(`${serverUrl}/api/albums`, {
                 headers: { 'Authorization': `Bearer ${authToken}` },
-            });
+            }, 15000);
             if (!res.ok) throw new Error(I18N.t('fetch_albums_failed'));
             const data = await res.json();
             cachedAlbums = data.albums;
+            selectionInitialized = false;
+            selectedAlbumPaths = new Set();
+            albumQuery = '';
+            albumSearch.value = '';
         } catch (err) {
+            cachedAlbums = [];
             appendLog('load_failed', { msg: err.message }, 'error');
         }
     }
 
-    function updateCard() {
-        const thumbRow = document.getElementById('thumb-row');
+    let selectionInitialized = false;
+    let selectedAlbumPaths = new Set();
+    let albumQuery = '';
+
+    const ALBUM_TONES = ['amber', 'blue', 'green', 'emerald', 'violet', 'sky', 'pink', 'slate'];
+
+    function selectedAlbums() {
+        return (cachedAlbums || []).filter(a => selectedAlbumPaths.has(a.path));
+    }
+
+    function selectedStats() {
+        const list = selectedAlbums();
+        return {
+            list: list,
+            files: list.reduce((s, a) => s + a.file_count, 0),
+            size: list.reduce((s, a) => s + a.total_size, 0),
+        };
+    }
+
+    function ensureSelection() {
         if (!cachedAlbums || cachedAlbums.length === 0) {
-            cardTitle.textContent = I18N.t('card_title');
-            cardDesc.textContent = I18N.t('no_photos');
-            btnDownload.disabled = true;
-            btnDownload.textContent = I18N.t('nothing_to_download');
-            if (thumbRow) thumbRow.innerHTML = '';
+            selectedAlbumPaths = new Set();
+            selectionInitialized = true;
             return;
         }
+        const valid = new Set(cachedAlbums.map(a => a.path));
+        if (!selectionInitialized) {
+            selectedAlbumPaths = new Set(valid);
+            selectionInitialized = true;
+            return;
+        }
+        selectedAlbumPaths = new Set([...selectedAlbumPaths].filter(p => valid.has(p)));
+    }
 
-        const totalFiles = cachedAlbums.reduce((s, a) => s + a.file_count, 0);
-        const totalSize = cachedAlbums.reduce((s, a) => s + a.total_size, 0);
+    function createAlbumCard(album, index) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'album-card';
+        card.dataset.path = album.path;
+        card.dataset.name = (album.name || '').toLowerCase();
+        card.setAttribute('role', 'checkbox');
+        card.setAttribute('aria-checked', 'false');
 
-        cardTitle.textContent = I18N.t('card_title');
+        const cover = document.createElement('span');
+        cover.className = 'album-cover tone-' + ALBUM_TONES[index % ALBUM_TONES.length];
+        let thumbUrl = '';
+        if (album.thumb_count > 0) {
+            thumbUrl = `${serverUrl}/api/thumb/${index}/0?token=${encodeURIComponent(authToken)}`;
+        } else if (album.video_count > 0) {
+            thumbUrl = `${serverUrl}/api/videothumb/${index}?token=${encodeURIComponent(authToken)}`;
+        }
+        if (thumbUrl) {
+            const img = document.createElement('img');
+            img.src = thumbUrl;
+            img.alt = album.name || '';
+            img.loading = 'lazy';
+            img.decoding = 'async';
+            img.onerror = () => {
+                img.remove();
+                cover.classList.add('thumb-failed');
+            };
+            cover.appendChild(img);
+        } else {
+            cover.classList.add('thumb-failed');
+        }
+        cover.insertAdjacentHTML('beforeend', '<svg class="album-fallback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="8.5" r="1.2"/></svg>');
 
-        // Free/Pro unified per spec §5.2 — both include videos, so the card
-        // always shows total file count + size and a single "Download all" button.
-        cardDesc.innerHTML = I18N.t('card_files_albums_html', { count: totalFiles.toLocaleString(), albums: cachedAlbums.length, size: formatSize(totalSize) });
-        btnDownload.textContent = I18N.t('download_all', { size: formatSize(totalSize) });
+        const body = document.createElement('span');
+        body.className = 'album-body';
+        const name = document.createElement('span');
+        name.className = 'album-name';
+        name.textContent = album.name || '';
+        const meta = document.createElement('span');
+        meta.className = 'album-meta';
+        meta.textContent = I18N.t('library_meta', {
+            count: (album.file_count || 0).toLocaleString(),
+            size: formatSize(album.total_size || 0),
+        });
+        body.append(name, meta);
 
-        // verify.js free trust tool: the verify panel only expands after the user clicks
-        // [Verify] and submits a ZIP.
-        btnDownload.disabled = false;
+        const check = document.createElement('span');
+        check.className = 'album-check';
+        check.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg>';
 
-        // Thumbnail row: walk all albums, loading multiple single-image thumbnails from each.
-        if (thumbRow) {
-            thumbRow.innerHTML = '';
-            const MAX_THUMBS = 4; // user feedback: 6 was too many, 4 is enough
-            let placed = 0;
-            for (const a of cachedAlbums) {
-                if (placed >= MAX_THUMBS) break;
-                const idx = cachedAlbums.indexOf(a);
-                if (idx < 0) continue;
-                const count = Math.min(a.thumb_count || 1, MAX_THUMBS - placed);
-                for (let n = 0; n < count; n++) {
-                    const img = document.createElement('img');
-                    img.className = 'card-thumb';
-                    img.src = `${serverUrl}/api/thumb/${idx}/${n}?token=${encodeURIComponent(authToken)}`;
-                    img.alt = a.name || '';
-                    img.loading = 'lazy';
-                    img.onerror = () => { img.remove(); };
-                    thumbRow.appendChild(img);
-                    placed++;
-                }
-            }
+        card.append(cover, body, check);
+        return card;
+    }
+
+    function renderAlbumGrid() {
+        albumGrid.innerHTML = '';
+        if (!cachedAlbums || cachedAlbums.length === 0) return;
+        cachedAlbums.forEach((album, index) => {
+            albumGrid.appendChild(createAlbumCard(album, index));
+        });
+    }
+
+    function updateAlbumFilter() {
+        const keyword = albumQuery.trim().toLowerCase();
+        let visible = 0;
+        albumGrid.querySelectorAll('.album-card').forEach(card => {
+            const match = !keyword || card.dataset.name.includes(keyword);
+            card.classList.toggle('is-hidden', !match);
+            if (match) visible++;
+        });
+        const hasAlbums = !!(cachedAlbums && cachedAlbums.length);
+        albumEmpty.classList.toggle('hidden', !hasAlbums || visible !== 0);
+        clearSearch.classList.toggle('hidden', albumSearch.value.length === 0);
+        clearSearch.disabled = downloading;
+        emptyClear.disabled = downloading;
+    }
+
+    function clearSelectionVisuals() {
+        if (downloading) return;
+        doneBadge.classList.add('hidden');
+        doneVerify.classList.add('hidden');
+        cancelBadge.classList.add('hidden');
+        if (dlState.mode !== 'idle') {
+            dlState.mode = 'idle';
+            progressSection.classList.add('hidden');
+            progressBar.style.width = '0%';
+            progressBar.classList.remove('done');
+            progressPct.textContent = '0%';
         }
     }
 
+    function updateSelectionUI() {
+        if (cachedAlbums === null) {
+            selectionCount.textContent = '';
+            footerCount.textContent = '';
+            selectAllBtn.disabled = true;
+            clearAllBtn.disabled = true;
+            albumSearch.disabled = true;
+            clearSearch.disabled = true;
+            emptyClear.disabled = true;
+            btnDownload.disabled = true;
+            btnDownload.textContent = I18N.t('btn_loading');
+            btnVerify.disabled = false;
+            albumGrid.classList.remove('locked');
+            return;
+        }
+
+        const albums = cachedAlbums || [];
+        const stats = selectedStats();
+        const selectedCount = stats.list.length;
+        const hasAlbums = albums.length > 0;
+        const allSelected = hasAlbums && selectedCount === albums.length;
+        const noneSelected = selectedCount === 0;
+
+        selectionCount.innerHTML = hasAlbums
+            ? I18N.t('selection_count_html', { selected: selectedCount, total: albums.length, files: stats.files.toLocaleString(), size: formatSize(stats.size) })
+            : I18N.t('no_photos');
+        footerCount.textContent = noneSelected ? I18N.t('footer_empty') : I18N.t('footer_selected', { count: selectedCount });
+
+        selectAllBtn.disabled = downloading || !hasAlbums || allSelected;
+        clearAllBtn.disabled = downloading || !hasAlbums || noneSelected;
+        albumSearch.disabled = downloading;
+        clearSearch.disabled = downloading;
+        const transferComplete = dlState.mode === 'complete' && !downloading;
+        btnVerify.disabled = downloading;
+        btnVerify.classList.toggle('hidden', transferComplete);
+        btnDownload.classList.toggle('secondary', transferComplete);
+        doneVerify.classList.toggle('hidden', !transferComplete);
+        albumGrid.classList.toggle('locked', downloading);
+
+        albumGrid.querySelectorAll('.album-card').forEach(card => {
+            const selected = selectedAlbumPaths.has(card.dataset.path);
+            card.classList.toggle('selected', selected);
+            card.setAttribute('aria-checked', String(selected));
+            card.disabled = downloading;
+            const album = albums.find(a => a.path === card.dataset.path);
+            const meta = card.querySelector('.album-meta');
+            if (album && meta) {
+                meta.textContent = I18N.t('library_meta', {
+                    count: (album.file_count || 0).toLocaleString(),
+                    size: formatSize(album.total_size || 0),
+                });
+            }
+        });
+
+        btnDownload.classList.toggle('downloading', downloading);
+        if (downloading) {
+            btnDownload.disabled = false;
+            btnDownload.textContent = I18N.t('cancel_transfer');
+        } else if (!hasAlbums) {
+            btnDownload.disabled = true;
+            btnDownload.textContent = I18N.t('nothing_to_download');
+        } else if (noneSelected) {
+            btnDownload.disabled = true;
+            btnDownload.textContent = I18N.t('select_albums_first');
+        } else {
+            btnDownload.disabled = false;
+            if (dlState.mode === 'complete') {
+                btnDownload.textContent = I18N.t('redownload');
+            } else if (allSelected) {
+                btnDownload.textContent = I18N.t('download_all_selected', { count: selectedCount, size: formatSize(stats.size) });
+            } else {
+                btnDownload.textContent = I18N.t('download_selected', { count: selectedCount, size: formatSize(stats.size) });
+            }
+        }
+
+        updateAlbumFilter();
+    }
+
+    function updateCard() {
+        ensureSelection();
+        renderAlbumGrid();
+        updateSelectionUI();
+    }
+
+    albumGrid.addEventListener('click', event => {
+        const card = event.target.closest('.album-card');
+        if (!card || downloading) return;
+        clearSelectionVisuals();
+        if (selectedAlbumPaths.has(card.dataset.path)) selectedAlbumPaths.delete(card.dataset.path);
+        else selectedAlbumPaths.add(card.dataset.path);
+        updateSelectionUI();
+    });
+
+    selectAllBtn.addEventListener('click', () => {
+        if (downloading || !cachedAlbums || cachedAlbums.length === 0) return;
+        clearSelectionVisuals();
+        selectedAlbumPaths = new Set(cachedAlbums.map(a => a.path));
+        updateSelectionUI();
+    });
+
+    clearAllBtn.addEventListener('click', () => {
+        if (downloading) return;
+        clearSelectionVisuals();
+        selectedAlbumPaths.clear();
+        updateSelectionUI();
+    });
+
+    albumSearch.addEventListener('input', () => {
+        albumQuery = albumSearch.value;
+        updateAlbumFilter();
+    });
+
+    albumSearch.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            albumSearch.value = '';
+            albumQuery = '';
+            updateAlbumFilter();
+        }
+    });
+
+    clearSearch.addEventListener('click', () => {
+        albumSearch.value = '';
+        albumQuery = '';
+        updateAlbumFilter();
+        albumSearch.focus();
+    });
+
+    emptyClear.addEventListener('click', () => {
+        albumSearch.value = '';
+        albumQuery = '';
+        updateAlbumFilter();
+        albumSearch.focus();
+    });
+
     // --- Download ---
     let downloading = false;
+    let selectedAlbumCount = 0;
     let dlGeneration = 0;
     let currentBatchId = null;
+    let activePollOnce = null;
     let dlSpeedSamples = [];
     // For re-rendering dynamic blocks on locale change: the big-file block / current album
     // title (neither has data-i18n; without re-rendering, stale language remains).
@@ -330,19 +558,31 @@
     // the success/interrupted states).
     let dlState = { mode: 'idle', overall: 0, total: 0, speed: 0, remaining: Infinity };
 
+    if (btnVerifyDone) {
+        btnVerifyDone.addEventListener('click', () => {
+            if (window.photosmoveVerify && typeof window.photosmoveVerify.open === 'function') {
+                window.photosmoveVerify.open();
+            } else {
+                btnVerify.click();
+            }
+        });
+    }
+
     btnDownload.addEventListener('click', () => {
         // One button, multiple states: click while transferring = cancel, otherwise = start download.
         if (downloading) { cancelDownload(); return; }
-        if (!cachedAlbums) return;
+        const paths = selectedAlbums().map(a => a.path);
+        if (paths.length === 0) return;
         // HEIC bad-review guard: Free mode keeps HEIC as-is, which Windows can't open by
         // default. Prompt once before the first download.
-        if (!localStorage.getItem('photosmove_heic_warned')) {
+        let heicWarned = false;
+        try { heicWarned = localStorage.getItem('photosmove_heic_warned') === '1'; } catch (e) {}
+        if (!heicWarned) {
             const msg = I18N.t('heic_warn');
             if (!confirm(msg)) return;
-            localStorage.setItem('photosmove_heic_warned', '1');
+            try { localStorage.setItem('photosmove_heic_warned', '1'); } catch (e) {}
         }
-        const paths = cachedAlbums.map(a => a.path);
-        if (paths.length > 0) startDownload(paths);
+        startDownload(paths);
     });
 
     async function startDownload(albumPaths) {
@@ -354,16 +594,24 @@
         btnDownload.textContent = I18N.t('cancel_transfer');
         btnDownload.classList.add('downloading');
         progressSection.classList.remove('hidden');
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        if (document.body) document.body.scrollTop = 0;
         doneBadge.classList.add('hidden');
+        doneVerify.classList.add('hidden');
         cancelBadge.classList.add('hidden');
         progressBar.style.width = '0%';
         progressBar.classList.remove('done');
         progressPct.textContent = '0%';
-        activeAlbumMeta = null;
+        selectedAlbumCount = albumPaths.length;
+        doneVerify.classList.add('hidden');
+        verifiedBadge.classList.add('hidden');
+        activeAlbumMeta = { key: 'transferring_albums', params: { count: selectedAlbumCount } };
         activeBigFileBatch = null;
         dlState = { mode: 'init', overall: 0, total: 0, speed: 0, remaining: Infinity };
+        updateSelectionUI();
         refreshProgressText();
-        progressAlbum.textContent = '';
+        progressAlbum.textContent = I18N.t('transferring_albums', { count: selectedAlbumCount });
 
         appendLog('transfer_start', { count: albumPaths.length }, 'primary');
 
@@ -392,9 +640,12 @@
 
             if (batches.length === 0) {
                 downloading = false;
-                btnDownload.disabled = false;
+                dlState.mode = 'idle';
+                progressSection.classList.add('hidden');
+                progressBar.style.width = '0%';
+                progressBar.classList.remove('done');
                 appendLog('no_files_to_download', null, 'warning');
-                updateCard();
+                updateSelectionUI();
                 return;
             }
 
@@ -404,8 +655,8 @@
             const t0 = Date.now();
             dlState = { mode: 'preparing', overall: 0, total: totalSize, speed: 0, remaining: Infinity };
             refreshProgressText();
-            activeAlbumMeta = { key: 'albums_count', params: { count: batches.length } };
-            progressAlbum.textContent = I18N.t('albums_count', { count: batches.length });
+            activeAlbumMeta = { key: 'transferring_albums', params: { count: selectedAlbumCount } };
+            progressAlbum.textContent = I18N.t('transferring_albums', { count: selectedAlbumCount });
 
             for (let i = 0; i < batches.length; i++) {
                 if (myGen !== dlGeneration) return;
@@ -429,15 +680,17 @@
 
             if (myGen !== dlGeneration) return;
 
-            if (totalDownloaded > 0) {
+            if (downloadedBatches === batches.length) {
                 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                 const avgSpeed = totalSize / parseFloat(elapsed);
-                const filesInDone = batches.slice(0, downloadedBatches)
-                    .reduce((s, b) => s + (b.file_count || 0), 0);
+                const filesInDone = batches.reduce((s, b) => s + (b.file_count || 0), 0);
                 appendLog('all_done', { files: filesInDone, size: formatSize(totalDownloaded), elapsed: elapsed, speed: formatSize(avgSpeed) }, 'success');
                 finishDownload(true);
-            } else {
+            } else if (downloadedBatches === 0) {
                 showCancelled();
+            } else {
+                appendLog('download_incomplete', null, 'error');
+                finishDownload(false);
             }
         } catch (err) {
             if (myGen !== dlGeneration) return;
@@ -450,8 +703,12 @@
     function downloadOneBatch(batch, batchIdx, batchTotal, startBytes, totalSize, globalT0) {
         return new Promise((resolve) => {
             dlSpeedSamples = [];
-            activeAlbumMeta = { key: 'album_progress', params: { i: batchIdx + 1, n: batchTotal, name: batch.album_name } };
-            progressAlbum.textContent = I18N.t('album_progress', activeAlbumMeta.params);
+            if (batchTotal === 1) {
+                activeAlbumMeta = { key: 'transferring_albums', params: { count: selectedAlbumCount } };
+            } else {
+                activeAlbumMeta = { key: 'album_progress', params: { i: batchIdx + 1, n: batchTotal, name: batch.album_name } };
+            }
+            progressAlbum.textContent = I18N.t(activeAlbumMeta.key, activeAlbumMeta.params);
 
             const isBigFileBatch = !!batch.big_file;
             if (isBigFileBatch) renderBigFileBatch(batch);
@@ -463,15 +720,18 @@
             // Poll progress (once per second, replacing the SSE long connection — avoids
             // progress stalls from TCP send-buffer backlog).
             currentBatchId = String(batch.id);
-            const pollUrl = `${serverUrl}/api/progress-poll?token=${encodeURIComponent(authToken)}&batch=${encodeURIComponent(batch.id)}`;
+            const pollUrlBase = `${serverUrl}/api/progress-poll?token=${encodeURIComponent(authToken)}&batch=${encodeURIComponent(batch.id)}`;
             let completed = false;
             let lastMsg = Date.now();
             let lastSent = -1;
             let pollInterrupted = false;
 
             const applyProgress = (data) => {
+                if (completed) return;
                 const sent = data.sent || 0;
-                const total = (data.total && data.total > 0) ? data.total : totalSize;
+                const total = (batchTotal === 1 && data.total > 0)
+                    ? data.total
+                    : (totalSize > 0 ? totalSize : (data.total || 0));
                 const overall = startBytes + sent;
                 const pct = total > 0 ? Math.min(Math.round((overall / total) * 100), 100) : 0;
                 const now = Date.now();
@@ -487,7 +747,7 @@
                     const dt = (now - first.t) / 1000;
                     if (dt > 0) speed = (overall - first.bytes) / dt;
                 }
-                const remaining = speed > 0 ? (total - overall) / speed : Infinity;
+                const remaining = speed > 0 ? Math.max(0, (total - overall)) / speed : Infinity;
                 progressBar.style.width = pct + '%';
                 progressPct.textContent = pct + '%';
                 dlState.overall = overall;
@@ -502,9 +762,11 @@
                 if (completed) return;
                 if (gen !== dlGeneration) { clearInterval(pollTimer); resolve(false); return; }
                 try {
-                    const res = await fetch(pollUrl, { headers: { 'Authorization': `Bearer ${authToken}` } });
+                    const pollUrl = `${pollUrlBase}&_=${Date.now()}`;
+                    const res = await fetch(pollUrl, { headers: { 'Authorization': `Bearer ${authToken}` }, cache: 'no-store' });
                     if (!res.ok) return;
                     const data = await res.json();
+                    if (completed) return;
                     lastMsg = Date.now();
                     if (pollInterrupted) {
                         pollInterrupted = false;
@@ -535,6 +797,7 @@
                 }
             };
 
+            activePollOnce = pollOnce;
             const pollTimer = setInterval(pollOnce, 1000);
             const watchdog = setInterval(() => {
                 if (completed) { clearInterval(watchdog); return; }
@@ -570,9 +833,19 @@
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
+                setTimeout(pollOnce, 250);
             })();
         });
     }
+
+    function resumeProgressPoll() {
+        if (!document.hidden && downloading && activePollOnce) activePollOnce();
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) resumeProgressPoll();
+    });
+    window.addEventListener('focus', resumeProgressPoll);
 
     function cancelDownload() {
         dlGeneration++;
@@ -622,31 +895,35 @@
             progressBar.classList.add('done');
             progressPct.textContent = '100%';
             dlState.mode = 'complete';
+            activeAlbumMeta = { key: 'progress_all_done', params: {} };
+            progressAlbum.textContent = I18N.t('progress_all_done');
             refreshProgressText(); // speed=Done, eta empty, downloaded keeps current overall/total
-            doneBadge.textContent = I18N.t('done_badge');
+            doneBadge.textContent = I18N.t('done_albums_badge', { count: selectedAlbumCount });
             doneBadge.classList.remove('hidden');
-            btnDownload.textContent = I18N.t('redownload');
-            btnDownload.disabled = false;
+            doneVerify.classList.remove('hidden');
         } else {
             doneBadge.classList.add('hidden');
-            cancelBadge.classList.add('hidden');
+            cancelBadge.dataset.reason = 'incomplete';
+            cancelBadge.textContent = I18N.t('download_incomplete');
+            cancelBadge.classList.remove('hidden');
             progressSection.classList.add('hidden');
-            btnDownload.classList.remove('downloading');
-            btnDownload.disabled = false;
             dlState.mode = 'idle';
-            updateCard();
+            activeAlbumMeta = null;
         }
+        updateSelectionUI();
     }
 
     function showCancelled() {
         downloading = false;
         dlState.mode = 'idle';
         doneBadge.classList.add('hidden');
+        cancelBadge.dataset.reason = 'cancelled';
+        cancelBadge.textContent = I18N.t('cancel_selection_badge');
         cancelBadge.classList.remove('hidden');
         progressSection.classList.add('hidden');
         btnDownload.classList.remove('downloading');
-        btnDownload.disabled = false;
-        updateCard();
+        activeAlbumMeta = null;
+        updateSelectionUI();
     }
 
     // --- Console ---
@@ -732,7 +1009,8 @@
         if (!block) {
             block = document.createElement('div');
             block.id = 'big-file-info-block';
-            cardDesc.parentNode.insertBefore(block, cardDesc.nextSibling);
+            const host = document.getElementById('selection-head');
+            if (host) host.parentNode.insertBefore(block, host.nextSibling);
         }
         return block;
     }
@@ -825,18 +1103,19 @@
         if (!saved) return;
         authToken = saved;
         try {
-            const res = await fetch(`${serverUrl}/api/albums`, {
+            const res = await fetchWithTimeout(`${serverUrl}/api/albums`, {
                 headers: { 'Authorization': `Bearer ${authToken}` },
-            });
+            }, 10000);
             if (res.ok) {
                 const data = await res.json();
                 cachedAlbums = data.albums;
                 showDashboard();
-            } else {
+            } else if (res.status === 401) {
                 clearToken();
             }
         } catch (e) {
-            clearToken();
+            // Keep the token on a transient Safari/network failure. The user can reload
+            // and auto-restore will retry instead of forcing the PIN again.
         }
     })();
 

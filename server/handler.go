@@ -193,7 +193,21 @@ func registerHandlers(mux *http.ServeMux, pin, token string, albums []Album, web
 	mux.HandleFunc("/api/batch/", s.handleBatch)
 	mux.HandleFunc("/api/progress-poll", s.handleProgressPoll)
 	mux.HandleFunc("/api/cancel", s.authRequired(s.handleCancel))
-	mux.Handle("/", http.FileServer(http.Dir(webDir)))
+
+	// Static assets: never let Safari reuse stale HTML or a stale CSS/JS pair after
+	// an APK upgrade. HTML is no-store; versioned assets are revalidated instead of
+	// served blindly from the Safari disk cache.
+	staticFiles := http.FileServer(http.Dir(webDir))
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		staticFiles.ServeHTTP(w, r)
+	}))
 
 	// Wrap the entire mux with CORS + Private Network Access middleware.
 	// Chrome requires Access-Control-Allow-Private-Network: true when
@@ -654,11 +668,12 @@ func padToZipSize(w io.Writer, written, zipSize int64, batchID string) {
 // races the polling loop: getBatchProgress returns nil → the poll response
 // reports sent=0, done=false forever → the browser UI never sees completion
 // and stays stuck on "cancel transfer" + "paused" even though the ZIP is fully
-// delivered. 15s = ~15 poll cycles, ample headroom; batchID is unique per
-// download so the delay never blocks the next one.
+// delivered. Browsers can throttle timers heavily while the tab is hidden, so
+// keep terminal state long enough for the next foreground poll; batchID is
+// unique per download, so this never blocks the next one.
 func scheduleProgressCleanup(batchID string) {
 	go func() {
-		time.Sleep(15 * time.Second)
+		time.Sleep(30 * time.Minute)
 		progressMapMu.Lock()
 		delete(progressMap, batchID)
 		progressMapMu.Unlock()
@@ -810,6 +825,7 @@ func (s *server) handleProgressPoll(w http.ResponseWriter, r *http.Request) {
 		File      string `json:"file"`
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	p := getBatchProgress(batchID)
 	if p == nil {
 		json.NewEncoder(w).Encode(snapshot{BatchID: batchID})

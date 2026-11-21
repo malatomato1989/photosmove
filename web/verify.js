@@ -39,6 +39,10 @@
     const progressText = document.getElementById('verify-progress-text');
     const cancelBtn = document.getElementById('verify-cancel');
     const results = document.getElementById('verify-results');
+    const dialog = document.getElementById('verify-dialog');
+    const dialogIdle = document.getElementById('verify-dialog-idle');
+    const dialogClose = document.getElementById('verify-dialog-close');
+    const chooseBtn = document.getElementById('verify-choose');
 
     if (!btnVerify) return;
 
@@ -48,6 +52,7 @@
     if (typeof I18N === 'undefined') return;
 
     let cancelled = false;
+    let verifyRun = 0;
     // Snapshot of the current verification stage (on locale change, rerender uses it to
     // re-set verify-progress-text/verify-summary; neither has data-i18n so applyToDOM skips
     // them). summary = {key, params, strong} describes the current summary element's copy
@@ -58,6 +63,8 @@
     function show() { if (panel) panel.classList.remove('hidden'); }
     function hide() { if (panel) panel.classList.add('hidden'); }
     function reset() {
+        verifyRun++;
+        if (zipInput) zipInput.value = '';
         if (summary) summary.innerHTML = '';
         if (results) results.innerHTML = '';
         if (progressBox) progressBox.classList.add('hidden');
@@ -79,6 +86,7 @@
     // to re-render dynamic copy).
     function rerender() {
         if (!verifyState) return;
+        syncDialogAria();
         renderSummary(verifyState.summary);
         if (verifyState.stage && progressText) {
             if (verifyState.phase === 'stage1') progressText.textContent = I18N.t('verify_stage1', verifyState.stage);
@@ -86,24 +94,76 @@
         }
         // done state uses the modal (separate DOM, not re-rendered here).
     }
-    window.photosmoveVerify = { show, hide, rerender };
+    function setVerified(ok) {
+        const badge = document.getElementById('verified-badge');
+        if (badge) badge.classList.toggle('hidden', !ok);
+    }
 
-    // Clicking [Verify] opens the ZIP picker directly; the panel stays collapsed for now
-    // (avoids an empty white box). The panel is only remove('hidden')'d inside onZipPicked
-    // (after the user picks a ZIP).
-    btnVerify.addEventListener('click', () => {
+    function syncDialogAria() {
+        if (dialogClose) dialogClose.setAttribute('aria-label', I18N.t('close_label'));
+    }
+
+    function openDialog() {
         reset();
-        if (zipInput) zipInput.click();
+        if (!dialog) {
+            if (zipInput) zipInput.click();
+            return;
+        }
+        dialog.classList.remove('hidden');
+        if (dialogIdle) dialogIdle.classList.remove('hidden');
+        if (panel) panel.classList.add('hidden');
+        if (progressBox) progressBox.classList.add('hidden');
+        document.body.style.overflow = 'hidden';
+        syncDialogAria();
+    }
+
+    function closeDialog() {
+        verifyRun++;
+        if (verifyState.phase === 'parsing' || verifyState.phase === 'stage1' || verifyState.phase === 'stage2') {
+            cancelled = true;
+            destroyHasher();
+        }
+        if (dialog) dialog.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+
+    function finishInDialog() {
+        if (dialog) dialog.classList.add('hidden');
+        document.body.style.overflow = '';
+    }
+
+    window.photosmoveVerify = { show, hide, rerender, open: openDialog, close: closeDialog };
+
+    btnVerify.addEventListener('click', openDialog);
+
+    if (chooseBtn) {
+        chooseBtn.addEventListener('click', () => {
+            reset();
+            if (zipInput) zipInput.click();
+        });
+    }
+    if (dialogClose) dialogClose.addEventListener('click', closeDialog);
+    const idleCancel = document.getElementById('verify-idle-cancel');
+    if (idleCancel) idleCancel.addEventListener('click', closeDialog);
+    if (dialog) {
+        dialog.addEventListener('click', event => {
+            if (event.target === dialog) closeDialog();
+        });
+    }
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && dialog && !dialog.classList.contains('hidden')) closeDialog();
     });
 
     if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {
             cancelled = true;
+            verifyRun++;
             verifyState = { phase: 'cancelled', stage: null, summary: { key: 'verify_cancelled', strong: 'gray' } };
             // Terminate the Worker and reject all in-flight hashes (rebuilt on next run)
             destroyHasher();
             if (progressBox) progressBox.classList.add('hidden');
             renderSummary(verifyState.summary);
+            closeDialog();
         });
     }
 
@@ -314,7 +374,7 @@
             all.push('<li class="verify-warn">' + escapeHtml(m.path) + ' — ' + I18N.t('verify_size_detail', { exp: fmtSize(m.expected), act: fmtSize(m.actual) }) + '</li>');
         }
         for (const m of missCap) {
-            all.push('<li class="verify-err">' + escapeHtml(m.path) + ' — ' + I18N.t('verify_missing_short') + '</li>');
+            all.push('<li class="verify-err">' + escapeHtml(m) + ' — ' + I18N.t('verify_missing_short') + '</li>');
         }
         const moreCount = Math.max(0, corruptedFiles.length - DETAIL_CAP)
             + Math.max(0, mismatchedFiles.length - DETAIL_CAP)
@@ -326,7 +386,9 @@
             html += '<ul class="verify-modal-list">' + all.join('') + '</ul>';
         }
 
+        setVerified(corrupted === 0 && mismatched === 0 && missing === 0 && sizeOnly === 0);
         showResultModal(html);
+        finishInDialog();
         if (panel) panel.classList.add('hidden');
         if (progressBox) progressBox.classList.add('hidden');
     }
@@ -487,9 +549,11 @@
 
     // Show an error and hide the progress bar (no lingering "Cancel" button + 0% bar).
     function showError(title, detail) {
+        setVerified(false);
         const html = '<div class="verify-modal-title err">' + escapeHtml(title) + '</div>' +
             (detail ? '<div class="verify-modal-meta">' + escapeHtml(detail) + '</div>' : '');
         showResultModal(html);
+        finishInDialog();
         if (panel) panel.classList.add('hidden');
         if (progressBox) progressBox.classList.add('hidden');
     }
@@ -524,6 +588,10 @@
         const file = e.target.files && e.target.files[0];
         if (!file) return;
         reset();
+        const myRun = verifyRun;
+        setVerified(false);
+        if (dialog) dialog.classList.remove('hidden');
+        if (dialogIdle) dialogIdle.classList.add('hidden');
         if (panel) panel.classList.remove('hidden');
         if (progressBox) progressBox.classList.remove('hidden');
         verifyState = { phase: 'parsing', stage: null, summary: { key: 'verify_parsing_cd', params: { name: escapeHtml(file.name), size: fmtSize(file.size) }, strong: 'normal' } };
@@ -531,6 +599,7 @@
 
         try {
             const result = await parseZipCentralDirectory(file);
+            if (cancelled || myRun !== verifyRun) return;
             if (!result.manifestEntry) {
                 showError(I18N.t('verify_no_manifest'), I18N.t('verify_no_manifest_hint'));
                 return;
@@ -547,6 +616,7 @@
 
             // Read manifest.json's actual bytes (file.slice reads only this small block).
             const manifestBytes = await readZipEntry(file, result.manifestEntry);
+            if (cancelled || myRun !== verifyRun) return;
             let manifest;
             try {
                 manifest = JSON.parse(new TextDecoder().decode(manifestBytes));
@@ -559,8 +629,10 @@
                 return;
             }
 
+            if (cancelled || myRun !== verifyRun) return;
             await runVerify(result.fileMap, file, manifest, I18N.t('verify_source_zip'));
         } catch (err) {
+            if (cancelled || myRun !== verifyRun) return;
             showError(I18N.t('verify_zip_parse_failed'), err.message || String(err));
         }
     }

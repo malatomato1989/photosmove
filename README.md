@@ -25,7 +25,7 @@ Most "photo transfer" apps compress, transcode, or need the cloud + an installed
 - 🔒 **Byte-perfect** — original bytes preserved (JPG/HEIC/HEIF/RAW/DNG/MP4/MOV/Live Photo). EXIF, GPS, timestamps intact. No recompression, no transcoding.
 - 🖱️ **One click** — pick albums, download. No driver, no client app, no account on the PC side (just a browser).
 - 📁 **Original folder structure kept** — files land in the same DCIM/Pictures layout as on the phone.
-- 🚀 **20GB+ in one go** — single streaming ZIP download, resumable per album, ZIP64 for files > 4GB.
+- 🚀 **20GB+ in one go** — single streaming ZIP download, ZIP64 for files > 4GB.
 - ✅ **Built-in integrity check** — SHA-256 byte-level verify after download (runs locally, nothing uploaded).
 - 🏠 **100% local** — transfer never leaves your Wi-Fi. No cloud, no telemetry, no servers.
 - 🔓 **Open source (GPL-3.0)** — fully auditable.

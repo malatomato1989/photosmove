@@ -35,6 +35,8 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Locale;
 
+import javax.jmdns.JmDNS;
+
 public class ServerService extends Service {
 
     private static final String TAG = "photosmove";
@@ -50,6 +52,7 @@ public class ServerService extends Service {
     public static final String EXTRA_STATUS = "status";
     public static final String EXTRA_PIN = "pin";
     public static final String EXTRA_URL = "url";
+    public static final String EXTRA_URL_FALLBACK = "url_fallback";
     public static final String EXTRA_PROGRESS = "progress";
     public static final String EXTRA_TRANSFER_STATE = "transfer_state";
     public static final String EXTRA_ALBUMS = "albums";
@@ -65,7 +68,12 @@ public class ServerService extends Service {
     private MediaFileServer mediaFileServer;
     private String detectedPin = "";
     private String detectedUrl = "";
+    private volatile boolean mdnsAvailable = false;
     private WifiManager.WifiLock wifiLock;
+    private WifiManager.MulticastLock multicastLock;
+    private JmDNS jmdns;
+    private volatile String mdnsIp;
+    private volatile int mdnsPort;
     private PowerManager.WakeLock cpuWakeLock;
     private volatile ConnectivityManager.NetworkCallback networkCallback;
     private volatile boolean serverStarted = false;
@@ -85,6 +93,7 @@ public class ServerService extends Service {
     private static volatile String lastStatus = "starting";
     private static volatile String lastPin = "";
     private static volatile String lastUrl = "";
+    private static volatile String lastUrlFallback = "";
     // Library summary (album count / file count / total bytes), computed after the MediaStore
     // scan and shown on the phone UI. 0 means "not available yet".
     private static volatile long lastAlbums = 0;
@@ -117,6 +126,7 @@ public class ServerService extends Service {
     public static String getLastStatus() { return lastStatus; }
     public static String getLastPin() { return lastPin; }
     public static String getLastUrl() { return lastUrl; }
+    public static String getLastUrlFallback() { return lastUrlFallback; }
     public static long getLastAlbums() { return lastAlbums; }
     public static long getLastFiles() { return lastFiles; }
     public static long getLastTotalSize() { return lastTotalSize; }
@@ -188,6 +198,11 @@ public class ServerService extends Service {
             if (wm != null) {
                 wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "photosmove");
                 wifiLock.acquire();
+                // mDNS advertising uses 224.0.0.251; without this lock many ROMs drop
+                // multicast packets while the screen is off.
+                multicastLock = wm.createMulticastLock("photosmove-mdns");
+                multicastLock.setReferenceCounted(false);
+                multicastLock.acquire();
             }
 
             PowerManager pm = (PowerManager) getApplicationContext().getSystemService(POWER_SERVICE);
@@ -287,18 +302,26 @@ public class ServerService extends Service {
         // Activity cannot restore a dead endpoint (broadcast only ever overwrites non-empty).
         if ("starting".equals(status) || "stopped".equals(status) || "error".equals(status)) {
             lastUrl = "";
+            lastUrlFallback = "";
             lastPin = "";
             detectedUrl = "";
             detectedPin = "";
             serverPort = 0;
+            mdnsAvailable = false;
         }
         if (pin != null && !pin.isEmpty()) lastPin = pin;
-        if (url != null && !url.isEmpty()) lastUrl = url;
+        if (url != null && !url.isEmpty()) {
+            lastUrl = url;
+            lastUrlFallback = buildFallbackUrl(wifiIp);
+        }
         Intent intent = new Intent(ACTION_UPDATE);
         intent.setPackage(getPackageName());
         if (status != null) intent.putExtra(EXTRA_STATUS, status);
         if (pin != null) intent.putExtra(EXTRA_PIN, pin);
         if (url != null) intent.putExtra(EXTRA_URL, url);
+        if (lastUrlFallback != null && !lastUrlFallback.isEmpty() && !lastUrlFallback.equals(lastUrl)) {
+            intent.putExtra(EXTRA_URL_FALLBACK, lastUrlFallback);
+        }
         if (progress != null) intent.putExtra(EXTRA_PROGRESS, progress);
         if (transferState != null) intent.putExtra(EXTRA_TRANSFER_STATE, transferState);
         // Album stats describe a usable library: do not let them reappear after stop/error
@@ -334,6 +357,7 @@ public class ServerService extends Service {
         if (mediaFileServer != null) {
             mediaFileServer.shutdown();
         }
+        stopMdns();
         if (serverProcess != null) {
             serverProcess.destroy();
         }
@@ -342,9 +366,54 @@ public class ServerService extends Service {
         stopSelf(startId);
     }
 
+    private synchronized void startMdnsIfReady() {
+        if (shutdownRequested || !wifiConnected || wifiIp == null || wifiIp.isEmpty() || serverPort <= 0) return;
+        if (jmdns != null && serverPort == mdnsPort && wifiIp.equals(mdnsIp)) return;
+        stopMdns();
+        try {
+            InetAddress address = InetAddress.getByName(wifiIp);
+            jmdns = JmDNS.create(address, "pm");
+            javax.jmdns.ServiceInfo info = javax.jmdns.ServiceInfo.create(
+                    "_photosmove._tcp.local.",
+                    "PhotosMove",
+                    serverPort,
+                    0,
+                    0,
+                    "version=" + VERSION);
+            jmdns.registerService(info);
+            mdnsIp = wifiIp;
+            mdnsPort = serverPort;
+            mdnsAvailable = true;
+            Log.i(TAG, "mDNS: http://pm.local:" + serverPort);
+        } catch (Exception e) {
+            Log.e(TAG, "mDNS registration failed", e);
+            stopMdns();
+        }
+    }
+
+    private synchronized void stopMdns() {
+        JmDNS current = jmdns;
+        jmdns = null;
+        mdnsIp = null;
+        mdnsPort = 0;
+        mdnsAvailable = false;
+        if (current != null) {
+            try { current.unregisterAllServices(); } catch (Exception ignored) {}
+            try { current.close(); } catch (Exception ignored) {}
+        }
+    }
+
     private String buildUrl(String ip) {
         int port = serverPort;
-        if (ip == null || ip.isEmpty() || port <= 0) return null;
+        if (port <= 0) return null;
+        if (mdnsAvailable) return "http://pm.local:" + port;
+        if (ip == null || ip.isEmpty()) return null;
+        return "http://" + ip + ":" + port;
+    }
+
+    private String buildFallbackUrl(String ip) {
+        int port = serverPort;
+        if (ip == null || ip.isEmpty() || port <= 0) return "";
         return "http://" + ip + ":" + port;
     }
 
@@ -357,6 +426,7 @@ public class ServerService extends Service {
         // Remember the successful port so the next start tries it first.
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
                 .putInt(KEY_LAST_PORT, port).apply();
+        startMdnsIfReady();
         if (wifiConnected) {
             String url = buildUrl(wifiIp);
             if (url != null) {
@@ -482,6 +552,7 @@ public class ServerService extends Service {
                         wifiConnected = true;
                         wifiIp = ip;
                         Log.i(TAG, "WiFi IP (callback): " + ip);
+                        startMdnsIfReady();
                         String url = buildUrl(ip);
                         // Port may not be reported yet during cold start; onPortReady() will
                         // publish the URL once PORT:<n> arrives.
@@ -507,6 +578,7 @@ public class ServerService extends Service {
                         wifiConnected = true;
                         wifiIp = ip;
                         if (changed) {
+                            startMdnsIfReady();
                             String url = buildUrl(ip);
                             if (url != null) {
                                 detectedUrl = url;
@@ -518,6 +590,7 @@ public class ServerService extends Service {
                     }
                     wifiConnected = false;
                     wifiIp = null;
+                    stopMdns();
                     Log.i(TAG, "WiFi network lost → wifi_required");
                     broadcast("wifi_required", null, null);
                     updateNotification(localizedCtx.getString(R.string.notif_wifi_required));
@@ -536,6 +609,7 @@ public class ServerService extends Service {
                 wifiConnected = true;
                 wifiIp = initialIp;
                 Log.i(TAG, "WiFi IP (initial): " + initialIp);
+                startMdnsIfReady();
                 String url = buildUrl(initialIp);
                 if (url != null) {
                     detectedUrl = url;
@@ -621,6 +695,9 @@ public class ServerService extends Service {
             serverPort = 0;
             wifiConnected = false;
             wifiIp = null;
+            mdnsAvailable = false;
+            lastUrlFallback = "";
+            stopMdns();
             lastNotificationTime = 0;
 
             copyAssetDir("web", webDir);
@@ -898,6 +975,10 @@ public class ServerService extends Service {
         lastFiles = 0;
         lastTotalSize = 0;
         unregisterWifiCallback();
+        stopMdns();
+        if (multicastLock != null && multicastLock.isHeld()) {
+            multicastLock.release();
+        }
         if (wifiLock != null && wifiLock.isHeld()) {
             wifiLock.release();
         }

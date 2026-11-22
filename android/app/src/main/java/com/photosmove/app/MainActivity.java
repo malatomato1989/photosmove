@@ -11,6 +11,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -19,11 +21,15 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.core.content.ContextCompat;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.MultiFormatWriter;
+import com.google.zxing.common.BitMatrix;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -36,6 +42,9 @@ public class MainActivity extends Activity {
     private TextView durationText;
     private LinearLayout urlCard;
     private TextView urlText;
+    private TextView urlFallbackText;
+    private LinearLayout qrCard;
+    private ImageView qrImage;
     private View libraryCard;
     private TextView libraryText;
     private Button copyUrlBtn;
@@ -76,6 +85,7 @@ public class MainActivity extends Activity {
             String status = intent.getStringExtra(ServerService.EXTRA_STATUS);
             String pin = intent.getStringExtra(ServerService.EXTRA_PIN);
             String url = intent.getStringExtra(ServerService.EXTRA_URL);
+            String urlFallback = intent.getStringExtra(ServerService.EXTRA_URL_FALLBACK);
 
             if (status != null) {
                 switch (status) {
@@ -89,6 +99,8 @@ public class MainActivity extends Activity {
                         currentUrl = "";
                         currentPin = "";
                         urlCard.setVisibility(View.GONE);
+                        qrCard.setVisibility(View.GONE);
+                        urlFallbackText.setVisibility(View.GONE);
                         pinCard.setVisibility(View.GONE);
                         // A fresh scan is about to run: hide the previous run's library stats.
                         libraryCard.setVisibility(View.GONE);
@@ -113,6 +125,8 @@ public class MainActivity extends Activity {
                         durationHandler.removeCallbacks(durationUpdater);
                         durationText.setVisibility(View.GONE);
                         urlCard.setVisibility(View.GONE);
+                        qrCard.setVisibility(View.GONE);
+                        urlFallbackText.setVisibility(View.GONE);
                         wifiHint.setVisibility(View.GONE);
                         wifiRequiredWarning.setVisibility(View.VISIBLE);
                         break;
@@ -124,6 +138,8 @@ public class MainActivity extends Activity {
                         currentUrl = "";
                         currentPin = "";
                         urlCard.setVisibility(View.GONE);
+                        qrCard.setVisibility(View.GONE);
+                        urlFallbackText.setVisibility(View.GONE);
                         pinCard.setVisibility(View.GONE);
                         durationHandler.removeCallbacks(durationUpdater);
                         durationText.setVisibility(View.GONE);
@@ -140,6 +156,8 @@ public class MainActivity extends Activity {
                         currentUrl = "";
                         currentPin = "";
                         urlCard.setVisibility(View.GONE);
+                        qrCard.setVisibility(View.GONE);
+                        urlFallbackText.setVisibility(View.GONE);
                         pinCard.setVisibility(View.GONE);
                         durationHandler.removeCallbacks(durationUpdater);
                         durationText.setVisibility(View.GONE);
@@ -161,6 +179,8 @@ public class MainActivity extends Activity {
                 currentUrl = url;
                 urlCard.setVisibility(View.VISIBLE);
                 urlText.setText(url);
+                updateUrlFallback(url, urlFallback);
+                updateQrCode(urlFallback != null && !urlFallback.isEmpty() ? urlFallback : url);
             }
 
             if (intent.hasExtra(ServerService.EXTRA_ALBUMS)) {
@@ -216,6 +236,9 @@ public class MainActivity extends Activity {
         durationText = findViewById(R.id.duration_text);
         urlCard = findViewById(R.id.url_card);
         urlText = findViewById(R.id.url_text);
+        urlFallbackText = findViewById(R.id.url_fallback_text);
+        qrCard = findViewById(R.id.qr_card);
+        qrImage = findViewById(R.id.qr_image);
         libraryCard = findViewById(R.id.library_card);
         libraryText = findViewById(R.id.library_text);
         copyUrlBtn = findViewById(R.id.copy_url_btn);
@@ -303,6 +326,41 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    private void updateUrlFallback(String url, String fallback) {
+        if (urlFallbackText == null) return;
+        if (fallback != null && !fallback.isEmpty() && !fallback.equals(url)) {
+            urlFallbackText.setText(getString(R.string.url_fallback_format, fallback));
+            urlFallbackText.setVisibility(View.VISIBLE);
+        } else {
+            urlFallbackText.setVisibility(View.GONE);
+        }
+    }
+
+    private void updateQrCode(String url) {
+        if (qrCard == null || qrImage == null) return;
+        if (url == null || url.isEmpty()) {
+            qrCard.setVisibility(View.GONE);
+            return;
+        }
+        try {
+            int size = Math.max(180, (int) (96 * getResources().getDisplayMetrics().density));
+            BitMatrix matrix = new MultiFormatWriter().encode(url, BarcodeFormat.QR_CODE, size, size);
+            int[] pixels = new int[size * size];
+            for (int y = 0; y < size; y++) {
+                int offset = y * size;
+                for (int x = 0; x < size; x++) {
+                    pixels[offset + x] = matrix.get(x, y) ? Color.BLACK : Color.WHITE;
+                }
+            }
+            Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            bitmap.setPixels(pixels, 0, size, 0, 0, size, size);
+            qrImage.setImageBitmap(bitmap);
+            qrCard.setVisibility(View.VISIBLE);
+        } catch (Exception e) {
+            qrCard.setVisibility(View.GONE);
+        }
+    }
+
     private void showLibrary(long albums, long files, long sizeBytes) {
         String fileCount = String.format(Locale.US, "%,d", files);
         String size = ServerService.formatSize(sizeBytes);
@@ -314,6 +372,7 @@ public class MainActivity extends Activity {
         String status = ServerService.getLastStatus();
         String pin = ServerService.getLastPin();
         String url = ServerService.getLastUrl();
+        String urlFallback = ServerService.getLastUrlFallback();
 
         long albums = ServerService.getLastAlbums();
         // Library stats are only valid while the service owns a scan result; never show
@@ -329,6 +388,8 @@ public class MainActivity extends Activity {
             currentUrl = url;
             urlCard.setVisibility(View.VISIBLE);
             urlText.setText(url);
+            updateUrlFallback(url, urlFallback);
+            updateQrCode(urlFallback != null && !urlFallback.isEmpty() ? urlFallback : url);
         }
         if (running && !pin.isEmpty()) {
             currentPin = pin;
@@ -342,6 +403,7 @@ public class MainActivity extends Activity {
                 stopBtn.setVisibility(View.VISIBLE);
                 startBtn.setVisibility(View.GONE);
                 urlCard.setVisibility(View.GONE);
+                        qrCard.setVisibility(View.GONE);
                 pinCard.setVisibility(View.GONE);
                 durationText.setVisibility(View.GONE);
                 break;
@@ -363,6 +425,7 @@ public class MainActivity extends Activity {
                 stopBtn.setVisibility(View.VISIBLE);
                 startBtn.setVisibility(View.GONE);
                 urlCard.setVisibility(View.GONE);
+                        qrCard.setVisibility(View.GONE);
                 wifiHint.setVisibility(View.GONE);
                 wifiRequiredWarning.setVisibility(View.VISIBLE);
                 break;
@@ -372,6 +435,7 @@ public class MainActivity extends Activity {
                 stopBtn.setVisibility(View.GONE);
                 startBtn.setVisibility(View.VISIBLE);
                 urlCard.setVisibility(View.GONE);
+                        qrCard.setVisibility(View.GONE);
                 pinCard.setVisibility(View.GONE);
                 break;
             case "error":
@@ -380,6 +444,7 @@ public class MainActivity extends Activity {
                 stopBtn.setVisibility(View.GONE);
                 startBtn.setVisibility(View.VISIBLE);
                 urlCard.setVisibility(View.GONE);
+                        qrCard.setVisibility(View.GONE);
                 pinCard.setVisibility(View.GONE);
                 break;
             default:
@@ -593,6 +658,7 @@ public class MainActivity extends Activity {
         currentUrl = "";
         currentPin = "";
         urlCard.setVisibility(View.GONE);
+                        qrCard.setVisibility(View.GONE);
         pinCard.setVisibility(View.GONE);
         progressCard.setVisibility(View.GONE);
         libraryCard.setVisibility(View.GONE);

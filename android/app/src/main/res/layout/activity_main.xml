@@ -145,40 +145,61 @@
 
             </LinearLayout>
 
-        </LinearLayout>
-
-        <!-- Library summary Card (album / file / total size, independent of the URL card) -->
-        <LinearLayout
-            android:id="@+id/library_card"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            style="@style/Card"
-            android:visibility="gone"
-            android:layout_marginBottom="@dimen/spacing_lg">
-
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/label_library"
-                style="@style/SectionLabel"
-                android:layout_marginBottom="@dimen/spacing_sm" />
-
-            <TextView
-                android:id="@+id/library_text"
+                android:id="@+id/url_fallback_text"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="14sp"
-                android:textColor="@color/text_primary" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/library_scope_hint"
                 android:textSize="12sp"
                 android:textColor="@color/text_secondary"
-                android:alpha="0.75"
-                android:layout_marginTop="4dp" />
+                android:fontFamily="monospace"
+                android:textIsSelectable="true"
+                android:visibility="gone"
+                android:layout_marginTop="6dp" />
+
+            <LinearLayout
+                android:id="@+id/qr_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:visibility="gone"
+                android:layout_marginTop="12dp">
+
+                <ImageView
+                    android:id="@+id/qr_image"
+                    android:layout_width="96dp"
+                    android:layout_height="96dp"
+                    android:adjustViewBounds="true"
+                    android:background="@android:color/white"
+                    android:padding="4dp"
+                    android:contentDescription="@string/qr_content_desc" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="12dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/qr_title"
+                        android:textSize="13sp"
+                        android:textColor="@color/text_primary"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/qr_hint"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginTop="3dp" />
+
+                </LinearLayout>
+
+            </LinearLayout>
 
         </LinearLayout>
 
@@ -221,6 +242,41 @@
                     android:layout_marginStart="@dimen/spacing_sm" />
 
             </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Library summary Card (album / file / total size, independent of the URL card) -->
+        <LinearLayout
+            android:id="@+id/library_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            style="@style/Card"
+            android:visibility="gone"
+            android:layout_marginBottom="@dimen/spacing_lg">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_library"
+                style="@style/SectionLabel"
+                android:layout_marginBottom="@dimen/spacing_sm" />
+
+            <TextView
+                android:id="@+id/library_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="14sp"
+                android:textColor="@color/text_primary" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/library_scope_hint"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:alpha="0.75"
+                android:layout_marginTop="4dp" />
 
         </LinearLayout>
 

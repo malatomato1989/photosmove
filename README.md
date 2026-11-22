@@ -27,12 +27,14 @@ Most "photo transfer" apps compress, transcode, or need the cloud + an installed
 - 📁 **Original folder structure kept** — files land in the same DCIM/Pictures layout as on the phone.
 - 🚀 **20GB+ in one go** — single streaming ZIP download, ZIP64 for files > 4GB.
 - ✅ **Built-in integrity check** — SHA-256 byte-level verify after download (runs locally, nothing uploaded).
+- 🌐 **Stable local name** — the phone advertises `pm.local` over mDNS; bookmark `http://pm.local:1111` once and only enter the PIN. The app also shows an IP fallback.
+- 📱 **Phone-to-phone** — scan the on-screen QR from another phone on the same Wi-Fi, then enter the PIN.
 - 🏠 **100% local** — transfer never leaves your Wi-Fi. No cloud, no telemetry, no servers.
 - 🔓 **Open source (GPL-3.0)** — fully auditable.
 
 ## How it works
 
-Phone runs an HTTP server (Go + Android foreground service) → PC browser connects over LAN → enter the PIN shown on the phone → pick albums → download a single streaming ZIP via browser native download → HTTP polling tracks progress.
+Phone runs an HTTP server (Go + Android foreground service) and advertises `pm.local` via mDNS → PC browser opens the stable local URL → enter the PIN shown on the phone → pick albums → download a single streaming ZIP via browser native download → HTTP polling tracks progress.
 
 ## Screenshots
 

@@ -69,6 +69,8 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("org.jmdns:jmdns:3.6.5")
+    implementation("com.google.zxing:core:3.5.3")
 }
 
 // === Go binary cross-compilation (replaces the go build step in build.sh) ===

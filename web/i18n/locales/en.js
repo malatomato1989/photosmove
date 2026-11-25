@@ -176,6 +176,23 @@ window.PHOTOSMOVE_I18N.en = {
         fatal_error: 'Error: {msg}',
         fatal_reload: 'Reload page',
 
+        // --- English plural variants (count === 1) ---
+        library_meta_one: '{count} file · {size}',
+        selection_count_html_one: '<strong>{selected} / {total}</strong> albums selected · <strong>{files}</strong> file · <strong>{size}</strong>',
+        footer_selected_one: '{count} album selected',
+        download_selected_one: 'Download {count} selected album ({size})',
+        download_all_selected_one: 'Download all {count} album ({size})',
+        transferring_albums_one: 'Transferring {count} album',
+        done_albums_badge_one: '✓ {count} album downloaded',
+        all_done_one: '✓ All done · {files} file · {size} · {elapsed}s · {speed}/s',
+        transfer_start_one: 'Transfer started · {count} album',
+        verify_ok_one: '✔ Byte-level intact: {count} file',
+        verify_corrupted_one: '✗ Corrupted: {count} file (size matches but SHA-256 differs)',
+        verify_size_mismatch_one: '⚠️ Size mismatch: {count} file',
+        verify_missing_one: '✗ Missing: {count} file',
+        verify_size_only_one: '· Size-only check: {count} file (manifest has no sha256)',
+        verify_total_one: 'Total size: {size} · {count} file',
+
         // --- language switcher ---
         lang_label: '中文',
         lang_en_label: 'English'

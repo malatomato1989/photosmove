@@ -1,7 +1,8 @@
 // PhotosMove i18n core (design D4). Zero-dependency plain JS.
-// Exposes window.I18N = { SUPPORTED, getLocale, setLocale, t, te, applyToDOM, currentLabel }
+// Exposes window.I18N = { SUPPORTED, getLocale, setLocale, t, tn, te, applyToDOM, currentLabel }
 //   getLocale()  : localStorage > navigator.language (fallback match en-US→en) > 'en'
 //   t(key,params): ui namespace lookup + {param} interpolation; missing key returns the key itself
+//   tn(key,count): like t(), but picks <key>_one when count === 1
 //   te(code,parm): errors namespace (server error code) lookup; unknown code returned as-is (spec Req5 fallback)
 //   applyToDOM() : [data-i18n]→textContent, [data-i18n-html]→innerHTML (HTML copy keeps its tags, spec Req6)
 //   setLocale()  : writes localStorage + applyToDOM + updates <html lang>
@@ -60,6 +61,19 @@
         return (s === undefined) ? key : interpolate(s, params);
     }
 
+    // UI copy with English plural support: count === 1 uses the `<key>_one`
+    // variant when present (zh defines the same keys with identical text so the
+    // locale parity check still passes).
+    function tn(key, count, params) {
+        var k = key;
+        if (Number(count) === 1 && uiOf(getLocale())[key + '_one'] !== undefined) {
+            k = key + '_one';
+        }
+        var p = params ? Object.assign({}, params) : {};
+        if (p.count === undefined) p.count = count;
+        return t(k, p);
+    }
+
     // Server error-code translation; unknown codes returned as-is without crashing (spec Req5)
     function te(code, params) {
         var s = errOf(getLocale())[code];
@@ -99,6 +113,7 @@
         getLocale: getLocale,
         setLocale: setLocale,
         t: t,
+        tn: tn,
         te: te,
         applyToDOM: applyToDOM,
         currentLabel: currentLabel

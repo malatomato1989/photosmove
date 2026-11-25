@@ -154,7 +154,11 @@
         // Dynamic elements in the progress section (no data-i18n): re-render only while
         // the progress section is visible (covers downloading/success/interrupted).
         if (!progressSection.classList.contains('hidden')) {
-            if (activeAlbumMeta) progressAlbum.textContent = I18N.t(activeAlbumMeta.key, activeAlbumMeta.params);
+            if (activeAlbumMeta) {
+                progressAlbum.textContent = activeAlbumMeta.pluralCount != null
+                    ? I18N.tn(activeAlbumMeta.key, activeAlbumMeta.pluralCount, activeAlbumMeta.params)
+                    : I18N.t(activeAlbumMeta.key, activeAlbumMeta.params);
+            }
             refreshProgressText();
         }
 
@@ -164,7 +168,7 @@
         // verify.js dynamic elements (no data-i18n, separate IIFE): call when the
         // rerender hook is exposed.
         if (dlState.mode === 'complete') {
-            doneBadge.textContent = I18N.t('done_albums_badge', { count: selectedAlbumCount });
+            doneBadge.textContent = I18N.tn('done_albums_badge', selectedAlbumCount, { count: selectedAlbumCount });
         }
         if (!cancelBadge.classList.contains('hidden')) {
             cancelBadge.textContent = cancelBadge.dataset.reason === 'incomplete'
@@ -356,7 +360,7 @@
         name.textContent = album.name || '';
         const meta = document.createElement('span');
         meta.className = 'album-meta';
-        meta.textContent = I18N.t('library_meta', {
+        meta.textContent = I18N.tn('library_meta', album.file_count || 0, {
             count: (album.file_count || 0).toLocaleString(),
             size: formatSize(album.total_size || 0),
         });
@@ -431,9 +435,9 @@
         const noneSelected = selectedCount === 0;
 
         selectionCount.innerHTML = hasAlbums
-            ? I18N.t('selection_count_html', { selected: selectedCount, total: albums.length, files: stats.files.toLocaleString(), size: formatSize(stats.size) })
+            ? I18N.tn('selection_count_html', stats.files, { selected: selectedCount, total: albums.length, files: stats.files.toLocaleString(), size: formatSize(stats.size) })
             : I18N.t('no_photos');
-        footerCount.textContent = noneSelected ? I18N.t('footer_empty') : I18N.t('footer_selected', { count: selectedCount });
+        footerCount.textContent = noneSelected ? I18N.t('footer_empty') : I18N.tn('footer_selected', selectedCount, { count: selectedCount });
 
         selectAllBtn.disabled = downloading || !hasAlbums || allSelected;
         clearAllBtn.disabled = downloading || !hasAlbums || noneSelected;
@@ -454,7 +458,7 @@
             const album = albums.find(a => a.path === card.dataset.path);
             const meta = card.querySelector('.album-meta');
             if (album && meta) {
-                meta.textContent = I18N.t('library_meta', {
+                meta.textContent = I18N.tn('library_meta', album.file_count || 0, {
                     count: (album.file_count || 0).toLocaleString(),
                     size: formatSize(album.total_size || 0),
                 });
@@ -476,9 +480,9 @@
             if (dlState.mode === 'complete') {
                 btnDownload.textContent = I18N.t('redownload');
             } else if (allSelected) {
-                btnDownload.textContent = I18N.t('download_all_selected', { count: selectedCount, size: formatSize(stats.size) });
+                btnDownload.textContent = I18N.tn('download_all_selected', selectedCount, { count: selectedCount, size: formatSize(stats.size) });
             } else {
-                btnDownload.textContent = I18N.t('download_selected', { count: selectedCount, size: formatSize(stats.size) });
+                btnDownload.textContent = I18N.tn('download_selected', selectedCount, { count: selectedCount, size: formatSize(stats.size) });
             }
         }
 
@@ -606,14 +610,14 @@
         selectedAlbumCount = albumPaths.length;
         doneVerify.classList.add('hidden');
         verifiedBadge.classList.add('hidden');
-        activeAlbumMeta = { key: 'transferring_albums', params: { count: selectedAlbumCount } };
+        activeAlbumMeta = { key: 'transferring_albums', params: { count: selectedAlbumCount }, pluralCount: selectedAlbumCount };
         activeBigFileBatch = null;
         dlState = { mode: 'init', overall: 0, total: 0, speed: 0, remaining: Infinity };
         updateSelectionUI();
         refreshProgressText();
-        progressAlbum.textContent = I18N.t('transferring_albums', { count: selectedAlbumCount });
+        progressAlbum.textContent = I18N.tn('transferring_albums', selectedAlbumCount, { count: selectedAlbumCount });
 
-        appendLog('transfer_start', { count: albumPaths.length }, 'primary');
+        appendLog(albumPaths.length === 1 ? 'transfer_start_one' : 'transfer_start', { count: albumPaths.length }, 'primary');
 
         try {
             const selectRes = await fetch(`${serverUrl}/api/select`, {
@@ -655,8 +659,8 @@
             const t0 = Date.now();
             dlState = { mode: 'preparing', overall: 0, total: totalSize, speed: 0, remaining: Infinity };
             refreshProgressText();
-            activeAlbumMeta = { key: 'transferring_albums', params: { count: selectedAlbumCount } };
-            progressAlbum.textContent = I18N.t('transferring_albums', { count: selectedAlbumCount });
+            activeAlbumMeta = { key: 'transferring_albums', params: { count: selectedAlbumCount }, pluralCount: selectedAlbumCount };
+            progressAlbum.textContent = I18N.tn('transferring_albums', selectedAlbumCount, { count: selectedAlbumCount });
 
             for (let i = 0; i < batches.length; i++) {
                 if (myGen !== dlGeneration) return;
@@ -684,7 +688,7 @@
                 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                 const avgSpeed = totalSize / parseFloat(elapsed);
                 const filesInDone = batches.reduce((s, b) => s + (b.file_count || 0), 0);
-                appendLog('all_done', { files: filesInDone, size: formatSize(totalDownloaded), elapsed: elapsed, speed: formatSize(avgSpeed) }, 'success');
+                appendLog(filesInDone === 1 ? 'all_done_one' : 'all_done', { files: filesInDone, size: formatSize(totalDownloaded), elapsed: elapsed, speed: formatSize(avgSpeed) }, 'success');
                 finishDownload(true);
             } else if (downloadedBatches === 0) {
                 showCancelled();
@@ -704,11 +708,13 @@
         return new Promise((resolve) => {
             dlSpeedSamples = [];
             if (batchTotal === 1) {
-                activeAlbumMeta = { key: 'transferring_albums', params: { count: selectedAlbumCount } };
+                activeAlbumMeta = { key: 'transferring_albums', params: { count: selectedAlbumCount }, pluralCount: selectedAlbumCount };
             } else {
                 activeAlbumMeta = { key: 'album_progress', params: { i: batchIdx + 1, n: batchTotal, name: batch.album_name } };
             }
-            progressAlbum.textContent = I18N.t(activeAlbumMeta.key, activeAlbumMeta.params);
+            progressAlbum.textContent = activeAlbumMeta.pluralCount != null
+                ? I18N.tn(activeAlbumMeta.key, activeAlbumMeta.pluralCount, activeAlbumMeta.params)
+                : I18N.t(activeAlbumMeta.key, activeAlbumMeta.params);
 
             const isBigFileBatch = !!batch.big_file;
             if (isBigFileBatch) renderBigFileBatch(batch);
@@ -898,7 +904,7 @@
             activeAlbumMeta = { key: 'progress_all_done', params: {} };
             progressAlbum.textContent = I18N.t('progress_all_done');
             refreshProgressText(); // speed=Done, eta empty, downloaded keeps current overall/total
-            doneBadge.textContent = I18N.t('done_albums_badge', { count: selectedAlbumCount });
+            doneBadge.textContent = I18N.tn('done_albums_badge', selectedAlbumCount, { count: selectedAlbumCount });
             doneBadge.classList.remove('hidden');
             doneVerify.classList.remove('hidden');
         } else {

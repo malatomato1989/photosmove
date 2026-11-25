@@ -344,20 +344,20 @@
         // ===== Result modal (four classes) =====
         const totalSize = entries.reduce((s, e) => s + (e.size || 0), 0);
         let html = '<div class="verify-modal-title">' + I18N.t('verify_result_title', { source: escapeHtml(sourceLabel) }) + '</div>';
-        html += '<div class="verify-modal-stat ok">' + I18N.t('verify_ok', { count: byteOk }) + '</div>';
+        html += '<div class="verify-modal-stat ok">' + I18N.tn('verify_ok', byteOk, { count: byteOk }) + '</div>';
         if (corrupted > 0) {
-            html += '<div class="verify-modal-stat err">' + I18N.t('verify_corrupted', { count: corrupted }) + '</div>';
+            html += '<div class="verify-modal-stat err">' + I18N.tn('verify_corrupted', corrupted, { count: corrupted }) + '</div>';
         }
         if (mismatched > 0) {
-            html += '<div class="verify-modal-stat warn">' + I18N.t('verify_size_mismatch', { count: mismatched }) + '</div>';
+            html += '<div class="verify-modal-stat warn">' + I18N.tn('verify_size_mismatch', mismatched, { count: mismatched }) + '</div>';
         }
         if (missing > 0) {
-            html += '<div class="verify-modal-stat err">' + I18N.t('verify_missing', { count: missing }) + '</div>';
+            html += '<div class="verify-modal-stat err">' + I18N.tn('verify_missing', missing, { count: missing }) + '</div>';
         }
         if (sizeOnly > 0) {
-            html += '<div class="verify-modal-stat meta">' + I18N.t('verify_size_only', { count: sizeOnly }) + '</div>';
+            html += '<div class="verify-modal-stat meta">' + I18N.tn('verify_size_only', sizeOnly, { count: sizeOnly }) + '</div>';
         }
-        html += '<div class="verify-modal-meta">' + I18N.t('verify_total', { size: fmtSize(totalSize), count: entries.length }) + '</div>';
+        html += '<div class="verify-modal-meta">' + I18N.tn('verify_total', entries.length, { size: fmtSize(totalSize), count: entries.length }) + '</div>';
 
         // Detail list (corrupted + mismatched + missing, capped at 25 per class).
         const DETAIL_CAP = 25;

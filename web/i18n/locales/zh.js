@@ -179,6 +179,23 @@ window.PHOTOSMOVE_I18N.zh = {
         fatal_error: '错误: {msg}',
         fatal_reload: '刷新页面',
 
+        // --- 英文复数变体（中文与基础文案相同，保证 locale key 对齐） ---
+        library_meta_one: '{count} 个文件 · {size}',
+        selection_count_html_one: '已选 <strong>{selected} / {total}</strong> 个相册 · <strong>{files}</strong> 个文件 · <strong>{size}</strong>',
+        footer_selected_one: '已选 {count} 个相册',
+        download_selected_one: '下载所选 {count} 个相册 ({size})',
+        download_all_selected_one: '下载全部 {count} 个相册 ({size})',
+        transferring_albums_one: '正在传输 {count} 个相册',
+        done_albums_badge_one: '✓ {count} 个相册已下载',
+        all_done_one: '✓ 全部完成 · {files} 个文件 · {size} · {elapsed}s · {speed}/s',
+        transfer_start_one: '传输启动 · {count} 个相册',
+        verify_ok_one: '✔ 字节级完整: {count} 个文件',
+        verify_corrupted_one: '✗ 字节损坏: {count} 个文件 (大小一致但 SHA-256 不符)',
+        verify_size_mismatch_one: '⚠️ 大小不符: {count} 个文件',
+        verify_missing_one: '✗ 缺失: {count} 个文件',
+        verify_size_only_one: '· 仅大小校验: {count} 个文件 (manifest 无 sha256)',
+        verify_total_one: '总大小: {size} · 共 {count} 个文件',
+
         // --- language switcher ---
         lang_label: '中文',
         lang_en_label: 'English'

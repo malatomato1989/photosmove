@@ -41,25 +41,25 @@ Phone runs an HTTP server (Go + Android foreground service) and advertises `pm.l
 **On the phone** — start the server with one tap:
 
 <p align="center">
-  <img src="store/screenshots/04-app-running-en.png?v=3" alt="App running on phone" height="520">
+  <img src="store/screenshots/04-app-running-en.png?v=4" alt="App running on phone" height="520">
 </p>
 
 **In the browser** — connect and enter the PIN:
 
 <p align="center">
-  <img src="store/screenshots/02-web-pin-en.png?v=3" alt="PIN auth" height="430">
+  <img src="store/screenshots/02-web-pin-en.png?v=4" alt="PIN auth" height="430">
 </p>
 
 **Download** — one streaming ZIP via browser native download:
 
 <p align="center">
-  <img src="store/screenshots/04-web-download-en.png?v=3" alt="Downloading" height="430">
+  <img src="store/screenshots/04-web-download-en.png?v=4" alt="Downloading" height="430">
 </p>
 
 **Verify** — SHA-256 integrity check, runs locally in the browser:
 
 <p align="center">
-  <img src="store/screenshots/05-web-verify-en.png?v=3" alt="Integrity check" height="430">
+  <img src="store/screenshots/05-web-verify-en.png?v=4" alt="Integrity check" height="430">
 </p>
 
 ## Compared to alternatives
@@ -76,11 +76,15 @@ Phone runs an HTTP server (Go + Android foreground service) and advertises `pm.l
 
 ## Features
 
+- Album-level selection — search, select all/clear, and download only the albums you choose
+- Stable local address — mDNS `pm.local`; bookmark `http://pm.local:1111` once and only enter the PIN (IP fallback shown)
+- QR pairing — another phone on the same Wi-Fi scans the on-screen QR, then enters the PIN
 - Single streaming ZIP — all selected albums, one `<a>.click()`, 100% browser-compatible
 - ZIP64 — single files > 4GB (DJI / GoPro / iPhone ProRes)
-- Local verify — `verify.js`: size pre-filter + SHA-256 (WASM, runs in browser)
+- Local verify — `verify.js`: size pre-filter + SHA-256 (WASM, runs in browser), shown in a dialog with live progress
 - 4-digit PIN auth + Bearer token; IP lockout on repeated wrong PIN
 - Foreground service + wake lock so large transfers survive screen-off
+- Safari reliability — no stale HTML/CSS/JS, auth timeout instead of an endless connecting state, resilient progress and completion polling
 
 ## Localization
 
@@ -119,7 +123,7 @@ No cloud, no telemetry, no account. See [Privacy Policy](docs/privacy.md).
 
 ## Keywords
 
-photo transfer, video transfer, transfer photos to computer, Android photo backup, photo sync, migrate photos, export photos, move photos to PC, byte-perfect, lossless, HEIC, EXIF preserve, no cloud, Immich alternative, Google Photos alternative, open source photo transfer
+photo transfer, video transfer, transfer photos to computer, Android photo backup, photo sync, migrate photos, export photos, move photos to PC, byte-perfect, lossless, HEIC, EXIF preserve, no cloud, mDNS, QR pairing, Immich alternative, Google Photos alternative, open source photo transfer
 
 ## License
 

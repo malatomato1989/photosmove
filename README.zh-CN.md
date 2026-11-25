@@ -41,25 +41,25 @@ PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 1,60
 **手机端** —— 一键启动服务：
 
 <p align="center">
-  <img src="store/screenshots/01-main-running-zh.png?v=3" alt="App 运行" height="520">
+  <img src="store/screenshots/01-main-running-zh.png?v=4" alt="App 运行" height="520">
 </p>
 
 **浏览器端** —— 连接并输入 PIN：
 
 <p align="center">
-  <img src="store/screenshots/02-web-pin-zh.png?v=3" alt="PIN 验证" height="430">
+  <img src="store/screenshots/02-web-pin-zh.png?v=4" alt="PIN 验证" height="430">
 </p>
 
 **下载** —— 单个流式 ZIP 浏览器原生下载：
 
 <p align="center">
-  <img src="store/screenshots/04-web-download-zh.png?v=3" alt="下载中" height="430">
+  <img src="store/screenshots/04-web-download-zh.png?v=4" alt="下载中" height="430">
 </p>
 
 **校验** —— SHA-256 完整性校验，浏览器本地运行：
 
 <p align="center">
-  <img src="store/screenshots/05-web-verify-zh.png?v=3" alt="校验结果" height="430">
+  <img src="store/screenshots/05-web-verify-zh.png?v=4" alt="校验结果" height="430">
 </p>
 
 ## 与同类工具对比
@@ -76,11 +76,15 @@ PhotosMove 是一个**一键**照片和视频迁移工具：一次操作把 1,60
 
 ## 功能
 
+- 相册级选择 —— 支持搜索、全选/清空，只下载选中的相册
+- 固定本地地址 —— mDNS 广播 `pm.local`；收藏 `http://pm.local:1111` 后只需输入验证码（同时显示 IP 备用地址）
+- 扫码连接 —— 同一 Wi-Fi 下，另一台手机扫描 App 上的二维码，再输入验证码
 - 单 ZIP 流式 —— 所有选中相册打成 1 个 ZIP，1 次 `<a>.click()`，100% 浏览器兼容
 - ZIP64 —— 支持单文件 > 4GB（DJI / GoPro / iPhone ProRes 大视频）
-- 本地校验 —— `verify.js`，size 预筛 + SHA-256（WASM，浏览器本地运行）
+- 本地校验 —— `verify.js`，size 预筛 + SHA-256（WASM，浏览器本地运行），校验浮层显示实时进度
 - 4 位 PIN 鉴权 + Bearer Token；PIN 错误多次封锁 IP
 - 前台服务 + 唤醒锁，大传输不被息屏打断
+- Safari 稳定性 —— 无旧缓存、连接有超时（不再无限等待）、进度与完成态轮询更可靠
 
 ## 多语言
 
@@ -119,7 +123,7 @@ bash build.sh -i       # 安装 debug 到已连接设备
 
 ## 关键词
 
-照片迁移、视频迁移、手机照片传电脑、把照片传到电脑、照片导出、相册备份、照片同步、安卓照片传输、无损传输、字节级、HEIC 传输、EXIF 保留、不联网、Immich 替代、谷歌相册替代、开源照片迁移
+照片迁移、视频迁移、手机照片传电脑、把照片传到电脑、照片导出、相册备份、照片同步、安卓照片传输、无损传输、字节级、HEIC 传输、EXIF 保留、不联网、mDNS、扫码连接、Immich 替代、谷歌相册替代、开源照片迁移
 
 ## License
 
